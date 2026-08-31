@@ -133,6 +133,11 @@ def build_parser() -> argparse.ArgumentParser:
     ixr = ixsub.add_parser("rebuild")
     _add_common(ixr)
 
+    # mcp
+    mc = sub.add_parser("mcp", help="启动 MCP server（stdio）")
+    _add_common(mc)
+    mc.add_argument("--transport", default="stdio", choices=["stdio"])
+
     return p
 
 
@@ -202,6 +207,9 @@ def _dispatch(p: argparse.ArgumentParser, args) -> None:
             n = idx.rebuild()
             idx.close()
             _emit({"indexed_experiments": n, "db": str(Index().dr.index_db)})
+    elif cmd == "mcp":
+        from ideaforge.mcp_server import run
+        run(args.transport)
     else:
         p.print_help()
         return

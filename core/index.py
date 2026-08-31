@@ -63,6 +63,8 @@ class Index:
         self._conn = sqlite3.connect(str(self.dr.index_db))
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        # 确保表存在（幂等；rebuild 会先 DROP 再建）
+        self._conn.executescript(_SCHEMA)
 
     # ------------------------------------------------------------ 重建
 

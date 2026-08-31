@@ -432,6 +432,59 @@ def get_analyses(exp_id: str) -> list[dict]:
                     "adopted": front.get("adopted", "false") == "true",
                     "references": json.loads(front.get("references", "[]")),
                     "content": text})
+    # 未读状态来自全局 read_state.json（不进 md、不进索引，rebuild 不丢）
+    dr = DataRoot()
+    rs = read_json(dr.read_state, {}) or {}
+    for item in out:
+        item["is_read"] = bool((rs.get(item["id"]) or {}).get("read"))
+    return out
+
+
+def mark_analysis_read(analysis_id: str, read: bool = True) -> dict:
+    dr = DataRoot()
+    rs = read_json(dr.read_state, {}) or {}
+    rs[analysis_id] = {"read": read, "readAt": domain.utc_now() if read else None}
+    atomic_write_json(dr.read_state, rs)
+    return {"analysis_id": analysis_id, "is_read": read}
+
+
+# ---------------------------------------------------------------- Proposal（agent 提议，人批准）
+
+def create_proposal(version_id: str, title: str, rationale: str,
+                    proposed_params: dict[str, Any] | None = None,
+                    based_on_experiment_ids: list[str] | None = None,
+                    confidence: float | None = None,
+                    estimated_runtime: str | None = None) -> dict:
+    layout = _find_version_root(version_id)
+    pid = domain.new_id("pro")
+    now = domain.utc_now()
+    prop = {
+        "schemaVersion": SCHEMA_VERSION,
+        "id": pid,
+        "versionId": version_id,
+        "title": title,
+        "rationale": rationale,
+        "proposedParams": proposed_params or {},
+        "basedOnExperimentIds": based_on_experiment_ids or [],
+        "confidence": confidence,
+        "estimatedRuntime": estimated_runtime,
+        "status": "pending",
+        "createdAt": now,
+    }
+    atomic_write_json(layout.research / "proposals" / f"{pid}.json", prop)
+    return prop
+
+
+def list_proposals(status: str | None = None) -> list[dict]:
+    out = []
+    for _did, layout, _entry in _iter_directions():
+        pdir = layout.research / "proposals"
+        if not pdir.exists():
+            continue
+        for f in sorted(pdir.glob("*.json")):
+            p = read_json(f)
+            if p and (not status or p.get("status") == status):
+                out.append(p)
     return out
 
 
