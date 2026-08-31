@@ -134,6 +134,11 @@ class DataRoot:
     def read_state(self) -> Path:
         return self.root / "read_state.json"
 
+    @property
+    def counters(self) -> Path:
+        """全局计数器：实验 id 全局唯一（跨方向不撞，修复 _find_exp_root 歧义）。"""
+        return self.root / "counters.json"
+
     def literature_meta(self, lit_id: str) -> Path:
         return self.literature_dir / lit_id / "meta.json"
 

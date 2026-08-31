@@ -271,7 +271,8 @@ def create_experiment(version_id: str, params: dict[str, Any] | None = None,
                       name: str | None = None, created_by: str = "agent",
                       git_ref: str | None = None) -> dict:
     layout = _find_version_root(version_id)
-    cs = CounterStore(layout.counters)
+    # 实验 id 用全局计数器（跨方向唯一），避免 _find_exp_root 跨方向歧义
+    cs = CounterStore(DataRoot().counters)
     seq = cs.bump("exp_seq")
     eid = f"exp-{seq:03d}"
     now = domain.utc_now()
