@@ -322,6 +322,14 @@ def update_experiment_status(exp_id: str, status: str, finished_at: str | None =
             meta["warning"] = not (res and res.get("metrics"))
         else:
             meta["warning"] = False
+        # 事件（供 /events/poll；索引是缓存，写失败不阻断主流程）
+        try:
+            from .index import append_event
+            append_event(None, "experiment.finished",
+                         {"experiment_id": exp_id, "status": status,
+                          "finished_at": meta["finishedAt"]})
+        except Exception:
+            pass
     if error:
         meta["error"] = error
     atomic_write_json(layout.exp_meta(exp_id), meta)

@@ -8,7 +8,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
+
+# console script 不保证 cwd 在 sys.path，把项目根显式加入，保证 core/api/ideaforge 可导入
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from core import service
 
@@ -138,6 +144,17 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(mc)
     mc.add_argument("--transport", default="stdio", choices=["stdio"])
 
+    # serve
+    sv = sub.add_parser("serve", help="启动本地服务（REST + 静态托管）")
+    _add_common(sv)
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8530)
+
+    # watch
+    wt = sub.add_parser("watch", help="Watcher：兜底回收长任务")
+    _add_common(wt)
+    wt.add_argument("--interval", type=float, default=15.0)
+
     return p
 
 
@@ -210,6 +227,13 @@ def _dispatch(p: argparse.ArgumentParser, args) -> None:
     elif cmd == "mcp":
         from ideaforge.mcp_server import run
         run(args.transport)
+    elif cmd == "serve":
+        import uvicorn
+        from api.server import app
+        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    elif cmd == "watch":
+        from core.watcher import watch
+        watch(args.interval)
     else:
         p.print_help()
         return

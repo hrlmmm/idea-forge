@@ -226,3 +226,18 @@ class Index:
 
     def close(self) -> None:
         self._conn.close()
+
+
+def append_event(root: Path | str | None, type_: str, data: dict) -> int:
+    """写事件到 index.db events 表（易失；M5 /events/poll 用）。"""
+    dr = DataRoot(root)
+    con = sqlite3.connect(str(dr.index_db))
+    try:
+        con.executescript(_SCHEMA)  # 确保表存在（幂等）
+        cur = con.execute(
+            "INSERT INTO events (type, data_json, ts) VALUES (?,?,?)",
+            (type_, json.dumps(data, ensure_ascii=False), domain.utc_now()))
+        con.commit()
+        return int(cur.lastrowid)
+    finally:
+        con.close()
