@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idea Forge</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app" id="app" data-density="compact">
+
+  <!-- 侧栏 -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head" id="dir-switch" style="cursor:pointer">
+      <span class="brand-dot">IF</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;color:var(--neutral-400)">研究方向</div>
+        <div id="dir-name" style="font-weight:600;color:var(--neutral-800);font-size:var(--fs-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">加载中…</div>
+      </div>
+      <span style="color:var(--neutral-400)">▾</span>
+    </div>
+    <div id="dir-menu" class="card" style="display:none;position:absolute;left:8px;top:52px;width:232px;z-index:40;padding:6px"></div>
+    <nav class="sb-nav">
+      <div class="sb-item" data-route="today"><span>○</span><span class="sb-label">今日动态</span><span class="sb-badge" id="badge-today" style="display:none"></span></div>
+      <div class="sb-item" data-route="literature"><span>📄</span><span class="sb-label">文献库</span></div>
+      <div class="sb-item active" data-route="ideas"><span>🌳</span><span class="sb-label">Idea 分支树</span></div>
+      <div class="sb-item" data-route="experiments"><span>🧪</span><span class="sb-label">实验总览</span></div>
+      <div class="sb-item" data-route="inbox"><span>📥</span><span class="sb-label">Agent 收件箱</span><span class="sb-badge" id="badge-inbox" style="display:none"></span></div>
+      <div class="sb-section-title sb-label">IDEA 快捷跳转</div>
+      <div id="sb-ideas"></div>
+    </nav>
+    <div class="sb-foot"><span class="sync-dot"></span><span class="sb-label" id="sync-state">索引状态</span></div>
+  </aside>
+
+  <!-- 主区 -->
+  <div class="main">
+    <header class="topbar">
+      <div class="breadcrumb" id="crumb"></div>
+      <div class="topbar-spacer"></div>
+      <div class="activity-ind" id="act-ind" style="display:none"><span class="pulse-dot"></span><span id="act-cnt">0</span> 运行中</div>
+    </header>
+    <main class="content" id="content">
+      <div class="empty" style="padding:80px 0"><div class="ic">⏳</div><div class="t">加载中…</div></div>
+    </main>
+  </div>
+</div>
+
+<!-- 抽屉 / Toast -->
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="drawer"><div class="drawer-head"><span id="drawer-title" style="font-weight:600;color:var(--neutral-800)"></span><button class="btn btn-ghost" id="drawer-close">✕</button></div><div class="drawer-body" id="drawer-body"></div></div>
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
