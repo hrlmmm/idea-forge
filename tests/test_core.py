@@ -98,3 +98,16 @@ def test_metrics_history_snapshot(tmp_path):
     got = service.get_experiment(exp["id"])
     assert got["metrics"]["a"] == 2
     assert got["metric_history"][-1]["metrics"] == {"a": 1}
+
+
+def test_counter_increments(tmp_path):
+    """回归：计数器必须递增，两个实验 id 不能相同。"""
+    repo = _setup(tmp_path)
+    d = service.create_direction("IM", repo)
+    idea = service.create_idea(d["direction_id"], "主干")
+    ver = service.create_version(idea["id"], commit="abc")
+    e1 = service.create_experiment(ver["id"], {"lr": 0.005})
+    e2 = service.create_experiment(ver["id"], {"lr": 0.01})
+    assert e1["id"] != e2["id"]
+    assert e1["id"].startswith("exp-")
+    assert e2["id"] > e1["id"]

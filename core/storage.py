@@ -97,7 +97,9 @@ class CounterStore:
             self._lock(f)
             try:
                 f.seek(0)
-                data = json.load(f) if f.read(1) else {}
+                first = f.read(1)
+                f.seek(0)
+                data = json.load(f) if first else {}
             except (json.JSONDecodeError, ValueError):
                 data = {}
             val = int(data.get(key, 0)) + 1

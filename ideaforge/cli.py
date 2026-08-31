@@ -127,6 +127,12 @@ def build_parser() -> argparse.ArgumentParser:
     aw.add_argument("--references", nargs="*", default=None)
     aw.add_argument("--author", default=None)
 
+    # index
+    ix = sub.add_parser("index", help="SQLite 索引")
+    ixsub = ix.add_subparsers(dest="sub", required=True)
+    ixr = ixsub.add_parser("rebuild")
+    _add_common(ixr)
+
     return p
 
 
@@ -189,6 +195,13 @@ def _dispatch(p: argparse.ArgumentParser, args) -> None:
         if sub == "write":
             _emit(service.write_analysis(args.experiment_id, args.content,
                                          args.references, author=args.author))
+    elif cmd == "index":
+        if sub == "rebuild":
+            from core.index import Index
+            idx = Index()
+            n = idx.rebuild()
+            idx.close()
+            _emit({"indexed_experiments": n, "db": str(Index().dr.index_db)})
     else:
         p.print_help()
         return
