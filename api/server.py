@@ -324,6 +324,21 @@ def api_events_poll(since: int = 0):
         idx.close()
 
 
+@app.get("/api/v1/events/log")
+def api_events_log(limit: int = 50):
+    """Agent 执行记录：最近的事件（倒序）。"""
+    idx = Index()
+    try:
+        rows = idx._conn.execute(
+            "SELECT seq, type, data_json, ts FROM events ORDER BY seq DESC LIMIT ?",
+            (min(max(limit, 1), 200),)).fetchall()
+        return {"events": [{"seq": r["seq"], "type": r["type"],
+                            "data": json.loads(r["data_json"]), "ts": r["ts"]}
+                           for r in rows]}
+    finally:
+        idx.close()
+
+
 # ---------------------------------------------------------------- 静态托管（web/，M6）
 
 _WEB_DIR = Path(__file__).resolve().parents[1] / "web"

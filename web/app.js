@@ -80,7 +80,7 @@ function render() {
   else if (r === "ideas") c.innerHTML = vIdeas();
   else if (r === "experiments") c.innerHTML = vExperiments();
   else if (r === "exp-detail") c.innerHTML = vExpDetail();
-  else if (r === "inbox") c.innerHTML = vInbox();
+  else if (r === "agent-log") c.innerHTML = vAgentLog();
   else c.innerHTML = vToday();
   bindView();
 }
@@ -93,7 +93,7 @@ function renderCrumb() {
     const idea = state.ideas.find((i) => i.id === state.ideaId);
     crumb.innerHTML = `<span style="font-weight:600">${esc(d)}</span><span class="sep">/</span><span style="cursor:pointer" data-go="experiments">${esc(idea ? idea.name : "")}</span><span class="sep">/</span><span class="mono">${esc(e ? e.id : "")}</span>`;
   } else {
-    const names = { today: "今日动态", literature: "文献库", ideas: "Idea 分支树", experiments: "实验总览", inbox: "Agent 收件箱" };
+    const names = { today: "今日动态", literature: "文献库", ideas: "Idea 分支树", experiments: "实验总览", "agent-log": "Agent 执行记录" };
     crumb.innerHTML = `<span style="font-weight:600">${esc(d)}</span><span class="sep">/</span><span class="cur">${names[state.route] || ""}</span>`;
   }
 }
@@ -102,9 +102,6 @@ function renderBadges() {
   const running = state.experiments.filter((e) => e.status === "running").length;
   const bt = $("#badge-today");
   if (running) { bt.style.display = "flex"; bt.textContent = running; } else bt.style.display = "none";
-  const pending = state.proposals.filter((p) => p.status === "pending").length;
-  const bi = $("#badge-inbox");
-  if (pending) { bi.style.display = "flex"; bi.textContent = pending; } else bi.style.display = "none";
   const ind = $("#act-ind");
   if (running) { ind.style.display = "flex"; $("#act-cnt").textContent = running; } else ind.style.display = "none";
 }
@@ -333,23 +330,38 @@ function vExpDetail() {
   return h;
 }
 
-// ---------------------------------------------------------------- 视图：收件箱
-function vInbox() {
-  const pending = state.proposals.filter((p) => p.status === "pending");
-  const cards = pending.map((p) => `
-    <div class="proposal">
-      <div class="pr-head">🤖 Agent 自动 · ${fmtDate(p.createdAt)}</div>
-      <div class="pr-title">${esc(p.title)}</div>
-      <div class="pr-body">${esc(p.rationale)}</div>
-      <div class="mini-diff" style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--neutral-500)">拟创建参数：${esc(JSON.stringify(p.proposedParams || {}))}</div>
-      <div style="display:flex;gap:var(--sp-2)"><button class="btn btn-primary" data-approve="${p.id}">批准并创建</button><button class="btn btn-ghost" data-reject="${p.id}">拒绝</button></div>
-    </div>`).join("");
+// ---------------------------------------------------------------- 视图：Agent 执行记录（活动日志）
+function vAgentLog() {
   return `<div class="view">
-    <div class="page-title">Agent 收件箱</div>
-    <div class="permission-bar">Agent 可以<b>创建实验记录、写入分析、提出提议</b>；<b>不会</b>执行代码、删除数据或修改已有实验结果。<br>💬 批准/拒绝通常<b>直接在对话中对 agent 说</b>（它用 approve_proposal / reject_proposal 执行）；这里也可以手动操作。</div>
-    <div class="section-title">待批准提议 (${pending.length})</div>
-    ${cards || `<div class="empty"><div class="ic">📥</div><div class="t">没有待批准的提议</div></div>`}
+    <div class="page-title">Agent 执行记录</div>
+    <div class="permission-bar">Agent 最近的操作：创建/完成实验、写入指标、写分析、提交提议（是否继续由你在对话中拍板）。</div>
+    <div class="card" id="agent-log-list" style="padding:0 var(--sp-4)"><div style="color:var(--neutral-400);padding:20px 0">加载…</div></div>
   </div>`;
+}
+
+function renderAgentLog() {
+  const box = $("#agent-log-list");
+  if (!box) return;
+  API.get("/events/log?limit=50").then((r) => {
+    const items = (r.events || []).map((ev) => {
+      const d = ev.data || {};
+      let txt = `<span class="mono" style="color:var(--neutral-400)">${esc(ev.type)}</span>`;
+      if (ev.type === "experiment.created") txt = `创建实验 <b>${esc(d.experiment_id)}</b>（${esc(d.name || "")}）`;
+      else if (ev.type === "experiment.finished") txt = `完成实验 <b>${esc(d.experiment_id)}</b>（${d.status === "failed" ? "失败" : "成功"}）`;
+      else if (ev.type === "metrics.set") txt = `写入指标（${d.count} 项）→ <b>${esc(d.experiment_id)}</b>`;
+      else if (ev.type === "analysis.created") txt = `写入分析 → <b>${esc(d.experiment_id)}</b>`;
+      else if (ev.type === "proposal.created") txt = `提交提议：${esc(d.title || "")}`;
+      else if (ev.type === "proposal.approved") txt = `批准提议 → 创建 <b>${esc(d.experiment_id)}</b>`;
+      else if (ev.type === "proposal.rejected") txt = `拒绝提议${d.reason ? `（${esc(d.reason)}）` : ""}`;
+      const time = ev.ts ? ev.ts.replace("T", " ").slice(5, 19) + "Z" : "";
+      return `<div style="display:flex;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--border-subtle);font-size:var(--fs-sm)">
+        <span class="source-badge src-agent">🤖</span>
+        <span style="flex:1">${txt}</span>
+        <span style="font-size:10px;color:var(--neutral-400);font-family:var(--font-mono);white-space:nowrap">${time}</span>
+      </div>`;
+    }).join("");
+    box.innerHTML = items || '<div class="empty" style="padding:30px 0"><div class="ic">∅</div><div class="t">还没有执行记录</div></div>';
+  }).catch(() => { box.innerHTML = '<div style="color:var(--neutral-400);padding:20px 0">加载失败</div>'; });
 }
 
 // ---------------------------------------------------------------- 绑定
@@ -362,17 +374,7 @@ function bindView() {
   $$("[data-go]").forEach((e) => e.onclick = () => { state.route = e.dataset.go; render(); });
   $$(".dir-opt").forEach((e) => e.onclick = () => { state.directionId = e.dataset.dir; state.ideaId = null; render(); });
   $("#dir-switch").onclick = (ev) => { ev.stopPropagation(); const m = $("#dir-menu"); m.style.display = m.style.display === "block" ? "none" : "block"; };
-  $$("[data-approve]").forEach((b) => b.onclick = async () => {
-    await API.post(`/proposals/${b.dataset.approve}/approve`, {});
-    toast("已批准并创建实验");
-    await refresh();
-  });
-  $$("[data-reject]").forEach((b) => b.onclick = async () => {
-    const reason = prompt("拒绝理由（可选）", "");
-    await API.post(`/proposals/${b.dataset.reject}/reject`, { reason: reason || null });
-    toast("已拒绝该提议");
-    await refresh();
-  });
+  if (state.route === "agent-log") renderAgentLog();
   if (state.route === "exp-detail") {
     // 返回上一级
     $$("#crumb [data-go]").forEach((b) => b.onclick = () => { state.route = "experiments"; render(); });

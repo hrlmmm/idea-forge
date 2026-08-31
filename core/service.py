@@ -328,6 +328,13 @@ def create_experiment(version_id: str, params: dict[str, Any] | None = None,
         "state": domain.STATUS_PENDING,
         "history": [{"state": domain.STATUS_PENDING, "at": now, "by": created_by}],
     })
+    # 执行记录事件（Agent 执行记录视图）
+    try:
+        from .index import append_event
+        append_event(None, "experiment.created",
+                     {"experiment_id": eid, "name": meta["name"]})
+    except Exception:
+        pass
     # results.json 由 agent / Watcher 写，创建时不生成
     return {**meta, "params": params or {}}
 
@@ -380,6 +387,12 @@ def set_metrics(exp_id: str, metrics: dict[str, Any],
     if metric_schema:
         res["metricSchema"] = metric_schema
     atomic_write_json(layout.exp_results(exp_id), res)
+    try:
+        from .index import append_event
+        append_event(None, "metrics.set",
+                     {"experiment_id": exp_id, "count": len(metrics)})
+    except Exception:
+        pass
     return {
         "experiment_id": exp_id,
         "metrics_count": len(metrics),
@@ -446,6 +459,12 @@ def write_analysis(exp_id: str, content: str, references: list[str] | None = Non
     )
     path = layout.exp_analyses(exp_id) / f"{an_id}.md"
     atomic_write_text(path, front + content.strip() + "\n")
+    try:
+        from .index import append_event
+        append_event(None, "analysis.created",
+                     {"experiment_id": exp_id, "analysis_id": an_id})
+    except Exception:
+        pass
     return {"analysis_id": an_id, "experiment_id": exp_id,
             "source": source, "references": refs, "createdAt": now}
 
@@ -513,6 +532,12 @@ def create_proposal(version_id: str, title: str, rationale: str,
         "createdAt": now,
     }
     atomic_write_json(layout.research / "proposals" / f"{pid}.json", prop)
+    try:
+        from .index import append_event
+        append_event(None, "proposal.created",
+                     {"proposal_id": pid, "title": title})
+    except Exception:
+        pass
     return prop
 
 
@@ -543,6 +568,12 @@ def approve_proposal(proposal_id: str) -> dict:
             p["status"] = "approved"
             p["approvedAt"] = domain.utc_now()
             atomic_write_json(layout.research / "proposals" / f"{p['id']}.json", p)
+            try:
+                from .index import append_event
+                append_event(None, "proposal.approved",
+                             {"proposal_id": proposal_id, "experiment_id": exp["id"]})
+            except Exception:
+                pass
             return {"proposal_id": proposal_id, "status": "approved",
                     "experiment_id": exp["id"]}
     raise KeyError(f"proposal not found or not pending: {proposal_id}")
@@ -557,6 +588,12 @@ def reject_proposal(proposal_id: str, reason: str | None = None) -> dict:
             p["rejectReason"] = reason
             p["rejectedAt"] = domain.utc_now()
             atomic_write_json(layout.research / "proposals" / f"{p['id']}.json", p)
+            try:
+                from .index import append_event
+                append_event(None, "proposal.rejected",
+                             {"proposal_id": proposal_id, "reason": reason})
+            except Exception:
+                pass
             return {"proposal_id": proposal_id, "status": "rejected"}
     raise KeyError(f"proposal not found or not pending: {proposal_id}")
 
