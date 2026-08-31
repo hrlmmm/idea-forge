@@ -51,7 +51,7 @@ async def main() -> int:
             await session.initialize()
             tools = await session.list_tools()
             names = sorted(t.name for t in tools.tools)
-            check("26 个工具", len(names) == 26, f"实际 {len(names)}")
+            check("28 个工具", len(names) == 28, f"实际 {len(names)}")
 
             async def call(name, args):
                 res = await session.call_tool(name, args)
@@ -143,8 +143,22 @@ async def main() -> int:
             t = await call("mark_deleted", {"entity_type": "nope", "entity_id": "x"})
             check("mark_deleted 拒绝未知类型", "unknown entity_type" in t)
 
-    passed = 25 - len(FAILED)
-    print(f"\n=== 通过 {passed}/25，失败 {len(FAILED)}: {FAILED} ===")
+            # ---- 对话确认：批准 / 拒绝提议
+            t = await call("propose_experiment", {"version_id": ver["id"], "title": "待批准实验",
+                                                  "rationale": "用于测试 approve", "proposed_params": {"lr": 0.02}})
+            check("propose_experiment2", '"proposal_id"' in t)
+            import json as _json
+            pid2 = _json.loads(t)["data"]["proposal_id"]
+            t = await call("approve_proposal", {"proposal_id": pid2})
+            check("approve_proposal", '"experiment_id"' in t and '"approved"' in t)
+            t = await call("propose_experiment", {"version_id": ver["id"], "title": "待拒绝实验",
+                                                  "rationale": "用于测试 reject", "proposed_params": {"lr": 0.9}})
+            pid3 = _json.loads(t)["data"]["proposal_id"]
+            t = await call("reject_proposal", {"proposal_id": pid3, "reason": "lr 过高"})
+            check("reject_proposal", '"rejected"' in t)
+
+    passed = 28 - len(FAILED)
+    print(f"\n=== 通过 {passed}/28，失败 {len(FAILED)}: {FAILED} ===")
     return 1 if FAILED else 0
 
 

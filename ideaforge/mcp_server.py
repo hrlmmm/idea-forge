@@ -373,6 +373,18 @@ def list_proposals(status: str | None = None, limit: int = 20) -> dict:
 
 
 @mcp.tool()
+def approve_proposal(proposal_id: str) -> dict:
+    """批准提议并创建实验（**须在对话中已获用户明确同意后调用**，决策在对话，这里只执行）。"""
+    return _data(service.approve_proposal(proposal_id))
+
+
+@mcp.tool()
+def reject_proposal(proposal_id: str, reason: str | None = None) -> dict:
+    """拒绝提议（**须在对话中已获用户明确拒绝后调用**）。"""
+    return _data(service.reject_proposal(proposal_id, reason))
+
+
+@mcp.tool()
 def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dict:
     """受限软删除/恢复：对 direction/paper/idea/version/experiment 置 deletedAt。
 

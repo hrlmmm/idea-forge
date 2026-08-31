@@ -529,6 +529,38 @@ def list_proposals(status: str | None = None) -> list[dict]:
     return out
 
 
+def approve_proposal(proposal_id: str) -> dict:
+    """批准提议：按 proposedParams 创建实验并置 running，提议状态 → approved。
+
+    决策发生在**对话**中（用户口头确认后由 agent 调用），本函数只是执行。
+    """
+    for p in list_proposals("pending"):
+        if p["id"] == proposal_id:
+            exp = create_experiment(p["versionId"], p.get("proposedParams") or {},
+                                    name=p.get("title"), created_by="agent")
+            update_experiment_status(exp["id"], "running")
+            layout = _find_version_root(p["versionId"])
+            p["status"] = "approved"
+            p["approvedAt"] = domain.utc_now()
+            atomic_write_json(layout.research / "proposals" / f"{p['id']}.json", p)
+            return {"proposal_id": proposal_id, "status": "approved",
+                    "experiment_id": exp["id"]}
+    raise KeyError(f"proposal not found or not pending: {proposal_id}")
+
+
+def reject_proposal(proposal_id: str, reason: str | None = None) -> dict:
+    """拒绝提议（用户在对话中明确拒绝后调用）。"""
+    for p in list_proposals("pending"):
+        if p["id"] == proposal_id:
+            layout = _find_version_root(p["versionId"])
+            p["status"] = "rejected"
+            p["rejectReason"] = reason
+            p["rejectedAt"] = domain.utc_now()
+            atomic_write_json(layout.research / "proposals" / f"{p['id']}.json", p)
+            return {"proposal_id": proposal_id, "status": "rejected"}
+    raise KeyError(f"proposal not found or not pending: {proposal_id}")
+
+
 # ---------------------------------------------------------------- 受限软删除（agent 可标记，物理清理只留人/UI）
 
 def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dict:

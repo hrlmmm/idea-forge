@@ -49,7 +49,7 @@ async def main():
             tools = await session.list_tools()
             names = sorted(t.name for t in tools.tools)
             print(f"[tools] {len(names)}: {names}")
-            assert len(names) == 26, f"期望 26 个工具，实际 {len(names)}"
+            assert len(names) == 28, f"期望 28 个工具，实际 {len(names)}"
 
             # 方向
             res = await session.call_tool("switch_direction", {"direction_id": d["direction_id"]})

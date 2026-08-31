@@ -265,19 +265,18 @@ def api_soft_delete(collection: str, entity_id: str):
 
 @app.post("/api/v1/proposals/{proposal_id}/approve")
 def api_approve_proposal(proposal_id: str):
-    # v0.1：批准 = 按 proposedParams 创建实验并置 running
-    for p in service.list_proposals("pending"):
-        if p["id"] == proposal_id:
-            exp = service.create_experiment(p["versionId"], p.get("proposedParams") or {},
-                                            created_by="agent")
-            service.update_experiment_status(exp["id"], "running")
-            p["status"] = "approved"
-            layout = service._find_version_root(p["versionId"])
-            service.atomic_write_json(
-                layout.research / "proposals" / f"{p['id']}.json", p)
-            return {"proposal_id": proposal_id, "status": "approved",
-                    "experiment_id": exp["id"]}
-    raise HTTPException(404, f"proposal not found: {proposal_id}")
+    try:
+        return service.approve_proposal(proposal_id)
+    except Exception as e:
+        raise _err(e)
+
+
+@app.post("/api/v1/proposals/{proposal_id}/reject")
+def api_reject_proposal(proposal_id: str, body: dict | None = None):
+    try:
+        return service.reject_proposal(proposal_id, (body or {}).get("reason"))
+    except Exception as e:
+        raise _err(e)
 
 
 @app.get("/api/v1/key-set")

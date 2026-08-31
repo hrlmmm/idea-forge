@@ -342,11 +342,11 @@ function vInbox() {
       <div class="pr-title">${esc(p.title)}</div>
       <div class="pr-body">${esc(p.rationale)}</div>
       <div class="mini-diff" style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--neutral-500)">拟创建参数：${esc(JSON.stringify(p.proposedParams || {}))}</div>
-      <div style="display:flex;gap:var(--sp-2)"><button class="btn btn-primary" data-approve="${p.id}">批准并创建</button><button class="btn btn-ghost">拒绝</button></div>
+      <div style="display:flex;gap:var(--sp-2)"><button class="btn btn-primary" data-approve="${p.id}">批准并创建</button><button class="btn btn-ghost" data-reject="${p.id}">拒绝</button></div>
     </div>`).join("");
   return `<div class="view">
     <div class="page-title">Agent 收件箱</div>
-    <div class="permission-bar">Agent 可以<b>创建实验记录、写入分析、提出提议</b>；<b>不会</b>执行代码、删除数据或修改已有实验结果。</div>
+    <div class="permission-bar">Agent 可以<b>创建实验记录、写入分析、提出提议</b>；<b>不会</b>执行代码、删除数据或修改已有实验结果。<br>💬 批准/拒绝通常<b>直接在对话中对 agent 说</b>（它用 approve_proposal / reject_proposal 执行）；这里也可以手动操作。</div>
     <div class="section-title">待批准提议 (${pending.length})</div>
     ${cards || `<div class="empty"><div class="ic">📥</div><div class="t">没有待批准的提议</div></div>`}
   </div>`;
@@ -365,6 +365,12 @@ function bindView() {
   $$("[data-approve]").forEach((b) => b.onclick = async () => {
     await API.post(`/proposals/${b.dataset.approve}/approve`, {});
     toast("已批准并创建实验");
+    await refresh();
+  });
+  $$("[data-reject]").forEach((b) => b.onclick = async () => {
+    const reason = prompt("拒绝理由（可选）", "");
+    await API.post(`/proposals/${b.dataset.reject}/reject`, { reason: reason || null });
+    toast("已拒绝该提议");
     await refresh();
   });
   if (state.route === "exp-detail") {
