@@ -118,9 +118,9 @@ function renderDirMenu() {
 }
 
 function renderSidebarIdeas() {
-  const roots = state.ideas.filter((i) => !i.parent_idea_id);
+  const roots = state.ideas.filter((i) => !i.parentIdeaId);
   const tree = (list, depth) => list.map((n) => {
-    const ch = state.ideas.filter((i) => i.parent_idea_id === n.id);
+    const ch = state.ideas.filter((i) => i.parentIdeaId === n.id);
     return `<div class="sb-sub" style="${depth ? "padding-left:" + (24 + depth * 16) + "px" : ""}">
       <div class="sb-item" data-jump-idea="${n.id}"><span>·</span><span class="sb-label">${esc(n.name)}</span></div>
     </div>` + tree(ch, depth + 1);
@@ -138,7 +138,7 @@ function vToday() {
     running.forEach((e) => { h += `<div class="card" style="padding:var(--sp-4);margin-bottom:var(--sp-3)"><div style="display:flex;justify-content:space-between"><b>${esc(e.name)}</b><span class="status-badge sb-running"><span class="dot"></span>运行中</span></div><div class="m-progress"></div></div>`; });
   }
   h += `<div class="section-title">最近完成 / 失败 (${done.length})</div>`;
-  done.forEach((e) => { h += `<div class="card" style="padding:var(--sp-4);margin-bottom:var(--sp-3);border-left:4px solid ${e.status === "failed" ? "var(--danger-500)" : "var(--success-500)"};cursor:pointer" data-open-exp="${e.id}"><div style="display:flex;justify-content:space-between"><b>${esc(e.name)}</b><span class="status-badge ${e.status === "failed" ? "sb-failed" : "sb-done"}"><span class="dot"></span>${e.status === "failed" ? "失败" : "完成"}</span></div><div class="mono" style="font-size:var(--fs-xs);color:var(--neutral-400)">${e.id} · ${fmtDate(e.finished_at)}</div></div>`; });
+  done.forEach((e) => { h += `<div class="card" style="padding:var(--sp-4);margin-bottom:var(--sp-3);border-left:4px solid ${e.status === "failed" ? "var(--danger-500)" : "var(--success-500)"};cursor:pointer" data-open-exp="${e.id}"><div style="display:flex;justify-content:space-between"><b>${esc(e.name)}</b><span class="status-badge ${e.status === "failed" ? "sb-failed" : "sb-done"}"><span class="dot"></span>${e.status === "failed" ? "失败" : "完成"}</span></div><div class="mono" style="font-size:var(--fs-xs);color:var(--neutral-400)">${e.id} · ${fmtDate(e.finishedAt)}</div></div>`; });
   return h + `</div>`;
 }
 
@@ -149,52 +149,104 @@ function vLiterature() {
     <div class="lit-row">
       <div><div class="lit-title">${esc(p.title)}</div><div class="lit-meta">${esc((p.authors || []).join(", "))} · ${p.year || "?"} · ${esc(p.venue || "")}</div></div>
       <div style="display:flex;gap:4px">${(p.tags || []).slice(0, 3).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
-      <div>${p.derived_idea_ids && p.derived_idea_ids.length ? `<span class="badge badge-accent">Idea ${p.derived_idea_ids.length}</span>` : `<span class="badge badge-neutral">未衍生</span>`}</div>
+      <div>${p.derivedIdeaIds && p.derivedIdeaIds.length ? `<span class="badge badge-accent">Idea ${p.derivedIdeaIds.length}</span>` : `<span class="badge badge-neutral">未衍生</span>`}</div>
     </div>`).join("");
   return `<div class="view"><div class="page-title">文献库 <span style="font-size:var(--fs-sm);color:var(--neutral-400);font-weight:400">${state.papers.length} 篇</span></div><div class="card">${rows}</div></div>`;
 }
 
-// ---------------------------------------------------------------- 视图：Idea 树（缩进列表 + 状态）
+// ---------------------------------------------------------------- 视图：Idea 树（画布：节点卡片 + 贝塞尔连线 + 状态色条）
 function vIdeas() {
   if (!state.ideas.length) return `<div class="view"><div class="empty"><div class="ic">🌳</div><div class="t">这个方向还没有 Idea</div><div>从文献点『+ 衍生 Idea』创建</div></div></div>`;
-  const tree = (list, depth) => list.map((n) => {
-    const ch = state.ideas.filter((i) => i.parent_idea_id === n.id);
-    const exps = state.experiments.filter((e) => { const v = state.versions.find((x) => x.id === e.version_id); return v && v.idea_id === n.id; });
-    const st = n.status === "validated" ? "sb-done" : n.status === "abandoned" ? "sb-pending" : "sb-running";
-    const stTxt = n.status === "validated" ? "已验证" : n.status === "abandoned" ? "已放弃" : "活跃";
-    return `<div style="padding:${depth ? 10 + depth * 18 : 10}px 16px;border-bottom:1px solid var(--border-subtle);cursor:pointer;opacity:${n.status === "abandoned" ? ".5" : "1"}" data-open-idea="${n.id}">
-      <div style="display:flex;align-items:center;gap:10px">
-        <b style="color:var(--neutral-800)">${esc(n.name)}</b>
-        <span class="status-badge ${st}"><span class="dot"></span>${stTxt}</span>
-        <span class="mono" style="font-size:10px;color:var(--accent-500)">⎇ ${esc(n.git_branch || "")}</span>
-        <span class="mono" style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-400)">${exps.length} 实验</span>
-      </div>
-      ${n.hypothesis ? `<div style="font-size:var(--fs-sm);color:var(--neutral-500);margin-top:4px">${esc(n.hypothesis)}</div>` : ""}
-    </div>` + tree(ch, depth + 1);
+
+  // 构建树并做简单层状布局（深度优先：父先子后，同层垂直均布）
+  const children = {};
+  state.ideas.forEach((i) => { (children[i.parentIdeaId || "root"] = children[i.parentIdeaId || "root"] || []).push(i); });
+  const order = [];
+  const walk = (list) => list.forEach((n) => { order.push(n); if (children[n.id]) walk(children[n.id]); });
+  walk(children["root"] || []);
+
+  const nodeW = 200, nodeH = 78, hGap = 90, vGap = 26, pad = 24;
+  const depthCount = {};
+  order.forEach((n) => {
+    const d = depthOf(n.id);
+    depthCount[d] = (depthCount[d] || 0) + 1;
+  });
+  function depthOf(id, seen = new Set()) {
+    if (seen.has(id)) return 0;
+    const n = state.ideas.find((x) => x.id === id);
+    if (!n || !n.parentIdeaId) return 0;
+    seen.add(id);
+    return 1 + depthOf(n.parentIdeaId, seen);
+  }
+  const yCursor = {};
+  const pos = {};
+  order.forEach((n) => {
+    const d = depthOf(n.id);
+    yCursor[d] = (yCursor[d] || 0);
+    pos[n.id] = { x: pad + d * (nodeW + hGap), y: pad + yCursor[d] * (nodeH + vGap) };
+    yCursor[d]++;
+  });
+  const maxDepth = Math.max(0, ...order.map((n) => depthOf(n.id)));
+  const maxPerLevel = Math.max(1, ...Object.values(depthCount));
+  const canvasW = pad * 2 + maxDepth * (nodeW + hGap) + nodeW;
+  const canvasH = pad * 2 + maxPerLevel * (nodeH + vGap);
+
+  // 连线（父 → 子 贝塞尔曲线）
+  let paths = "";
+  order.forEach((n) => {
+    if (!n.parentIdeaId) return;
+    const p = pos[n.parentIdeaId], c = pos[n.id];
+    if (!p || !c) return;
+    const x1 = p.x + nodeW, y1 = p.y + nodeH / 2;
+    const x2 = c.x, y2 = c.y + nodeH / 2;
+    const mx = (x1 + x2) / 2;
+    paths += `<path d="M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="var(--neutral-300)" stroke-width="2"/>`;
+  });
+
+  // 节点卡片
+  const nodes = order.map((n) => {
+    const exps = state.experiments.filter((e) => { const v = state.versions.find((x) => x.id === e.versionId); return v && v.ideaId === n.id; });
+    const cls = n.status === "validated" ? "validated" : n.status === "abandoned" ? "abandoned" : "active";
+    const p = pos[n.id];
+    return `<div class="idea-node ${cls}" data-open-idea="${n.id}" style="left:${p.x}px;top:${p.y}px">
+      <div class="left-bar"></div>
+      ${n.status === "validated" ? '<span class="nd-check">✓</span>' : ""}
+      <div class="nd-title">${esc(n.name)}</div>
+      <div class="nd-meta">${state.versions.filter((v) => v.ideaId === n.id).length} 版 · ${exps.length} 实验</div>
+      <div class="nd-meta" style="color:${n.status === "abandoned" ? "var(--neutral-300)" : "var(--accent-500)"}">⎇ ${esc(n.gitBranch || "")}</div>
+    </div>`;
   }).join("");
-  return `<div class="view"><div class="page-title">Idea 分支树</div><div class="card">${tree(state.ideas.filter((i) => !i.parent_idea_id), 0)}</div></div>`;
+
+  return `<div class="view">
+    <div class="page-title">Idea 分支树</div>
+    <div class="tree-canvas" style="position:relative;height:${canvasH}px;background-image:radial-gradient(var(--neutral-150) 1px,transparent 1px);background-size:24px 24px;border:1px solid var(--border-subtle);border-radius:var(--r-lg);overflow:hidden">
+      <svg class="tree-svg" style="position:absolute;inset:0;width:${canvasW}px;height:${canvasH}px;pointer-events:none">${paths}</svg>
+      ${nodes}
+    </div>
+    <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">每个 Idea = 该方向仓库的一条 git 分支（⎇）；已验证带 ✓，已放弃半透明虚线。点击节点查看其实验。</div>
+  </div>`;
 }
 
 // ---------------------------------------------------------------- 视图：实验总览（按版本分组的紧凑表）
 function vExperiments() {
   if (!state.ideas.length) return `<div class="view"><div class="empty"><div class="ic">∅</div><div class="t">这个方向还没有 Idea</div></div></div>`;
   const idea = state.ideas.find((i) => i.id === state.ideaId) || state.ideas[0];
-  const versions = state.versions.filter((v) => v.idea_id === idea.id);
-  const exps = state.experiments.filter((e) => versions.some((v) => v.id === e.version_id));
+  const versions = state.versions.filter((v) => v.ideaId === idea.id);
+  const exps = state.experiments.filter((e) => versions.some((v) => v.id === e.versionId));
   const rows = versions.map((v) => {
-    const ve = exps.filter((e) => e.version_id === v.id);
+    const ve = exps.filter((e) => e.versionId === v.id);
     const list = ve.map((e) => `
       <tr style="cursor:pointer" data-open-exp="${e.id}">
         <td class="mono" style="font-size:var(--fs-sm)">${esc(e.id)}</td>
         <td>${esc(e.name)}${e.description ? `<div style="font-size:var(--fs-xs);color:var(--neutral-500);margin-top:2px">${esc(e.description)}</div>` : ""}</td>
         <td><span class="status-badge ${e.status === "done" ? "sb-done" : e.status === "failed" ? "sb-failed" : e.status === "running" ? "sb-running" : "sb-pending"}"><span class="dot"></span>${e.status === "done" ? "完成" : e.status === "failed" ? "失败" : e.status === "running" ? "运行中" : "待运行"}</span></td>
-        <td class="mono" style="font-size:var(--fs-xs);color:var(--accent-500)">#${esc(e.gitRef || v.git_ref || "")}</td>
-        <td style="font-size:var(--fs-xs);color:var(--neutral-400)">${fmtDate(e.created_at)}</td>
+        <td class="mono" style="font-size:var(--fs-xs);color:var(--accent-500)">#${esc(e.gitRef || v.gitRef || "")}</td>
+        <td style="font-size:var(--fs-xs);color:var(--neutral-400)">${fmtDate(e.createdAt)}</td>
       </tr>`).join("");
     return `<div class="card" style="margin-bottom:var(--sp-3)">
       <div style="padding:var(--sp-3) var(--sp-4);display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border-subtle)">
         <span class="mono" style="font-weight:600;color:var(--neutral-800)">${esc(v.name)}</span>
-        <span class="mono" style="font-size:10px;color:var(--neutral-400)">#${esc(v.git_ref || "")}</span>
+        <span class="mono" style="font-size:10px;color:var(--neutral-400)">#${esc(v.gitRef || "")}</span>
         <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-500)">${ve.length} 个实验</span>
       </div>
       <table class="tbl"><thead><tr><th>实验</th><th>名称</th><th>状态</th><th>代码 commit</th><th>创建</th></tr></thead><tbody>${list || `<tr><td colspan="5" style="color:var(--neutral-400)">还没有实验</td></tr>`}</tbody></table>
@@ -217,7 +269,7 @@ function vExpDetail() {
     <div class="exp-head">
       <div><h1>${esc(e.name)}</h1>
         ${e.description ? `<div style="font-size:var(--fs-sm);color:var(--neutral-600);margin-top:2px">${esc(e.description)}</div>` : ""}
-        <div class="meta-line">${esc(e.id)} · 代码 <span class="mono" style="color:var(--accent-500)">#${esc(e.gitRef || "")}</span> · 创建 ${fmtDate(e.created_at)} · ${e.finished_at ? "完成 " + fmtDate(e.finished_at) : ""}</div>
+        <div class="meta-line">${esc(e.id)} · 代码 <span class="mono" style="color:var(--accent-500)">#${esc(e.gitRef || "")}</span> · 创建 ${fmtDate(e.createdAt)} · ${e.finishedAt ? "完成 " + fmtDate(e.finishedAt) : ""}</div>
       </div>
       <span class="status-badge ${e.status === "done" ? (e.warning ? "sb-warn" : "sb-done") : e.status === "failed" ? "sb-failed" : e.status === "running" ? "sb-running" : "sb-pending"}"><span class="dot"></span>${e.status === "done" ? (e.warning ? "完成·缺指标" : "完成") : e.status === "failed" ? "失败" : e.status === "running" ? "运行中" : "待运行"}</span>
     </div>
@@ -246,7 +298,7 @@ function vExpDetail() {
       if (!col) return;
       const list = (a.analyses || []).map((an) => `
         <div class="analysis-card" style="margin-bottom:var(--sp-3)">
-          <div class="ac-head"><span class="source-badge ${an.source === "agent" ? "src-agent" : "src-human"}">${an.source === "agent" ? "🤖 Agent 自动" : "✍ 手动"}</span> · ${esc(an.author || "")} · ${fmtDate(an.created_at)} ${an.is_read ? "" : '<span class="badge badge-new">NEW</span>'}</div>
+          <div class="ac-head"><span class="source-badge ${an.source === "agent" ? "src-agent" : "src-human"}">${an.source === "agent" ? "🤖 Agent 自动" : "✍ 手动"}</span> · ${esc(an.author || "")} · ${fmtDate(an.createdAt)} ${an.is_read ? "" : '<span class="badge badge-new">NEW</span>'}</div>
           <div class="ac-body">${esc(an.content).replace(/\n/g, "<br>")}</div>
         </div>`).join("");
       col.innerHTML = `<div class="section-title">Agent 分析</div>` + (list || `<div class="analysis-card"><div class="ac-body" style="color:var(--neutral-400)">还没有分析</div></div>`);
@@ -260,10 +312,10 @@ function vInbox() {
   const pending = state.proposals.filter((p) => p.status === "pending");
   const cards = pending.map((p) => `
     <div class="proposal">
-      <div class="pr-head">🤖 Agent 自动 · ${fmtDate(p.created_at)}</div>
+      <div class="pr-head">🤖 Agent 自动 · ${fmtDate(p.createdAt)}</div>
       <div class="pr-title">${esc(p.title)}</div>
       <div class="pr-body">${esc(p.rationale)}</div>
-      <div class="mini-diff" style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--neutral-500)">拟创建参数：${esc(JSON.stringify(p.proposed_params || {}))}</div>
+      <div class="mini-diff" style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--neutral-500)">拟创建参数：${esc(JSON.stringify(p.proposedParams || {}))}</div>
       <div style="display:flex;gap:var(--sp-2)"><button class="btn btn-primary" data-approve="${p.id}">批准并创建</button><button class="btn btn-ghost">拒绝</button></div>
     </div>`).join("");
   return `<div class="view">
