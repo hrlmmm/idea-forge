@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idea Forge — 可交互原型</title>
+<style>
+/* ============ 设计令牌（严格遵循 docs/product-design.md §3） ============ */
+:root{
+  --neutral-0:#FFFFFF; --neutral-25:#FCFCFD; --neutral-50:#F7F8FA; --neutral-100:#F1F2F5;
+  --neutral-150:#E9EBEF; --neutral-200:#E1E3E9; --neutral-300:#CDD1DA; --neutral-400:#A8AEBB;
+  --neutral-500:#7E8698; --neutral-600:#5C6373; --neutral-700:#43485A; --neutral-800:#2C3040;
+  --neutral-900:#1A1D28;
+  --accent-50:#F1F3FE; --accent-100:#E0E5FD; --accent-200:#C3CBFB; --accent-300:#9DA9F7;
+  --accent-500:#5563EA; --accent-600:#3F4BD1; --accent-700:#333CA8; --accent-800:#2A3183;
+  --success-50:#E8F6EE; --success-500:#2F9E63; --success-600:#217A4B;
+  --warning-50:#FEF4E6; --warning-500:#D98214; --warning-600:#A8630C;
+  --danger-50:#FDEDED; --danger-500:#D64545; --danger-600:#A93535;
+  --info-50:#EAF2FE; --info-500:#3B82D6; --info-600:#2C67AB;
+  --cat-1:#D97757; --cat-2:#5B9E8A; --cat-3:#C9A227; --cat-4:#7E9BC7; --cat-5:#B07AA1; --cat-6:#8A8F98;
+  --seq-0:#F1F3FE; --seq-1:#C3CBFB; --seq-2:#9DA9F7; --seq-3:#5563EA; --seq-4:#333CA8;
+  --font-sans:"Inter",-apple-system,"SF Pro Text","Segoe UI",Roboto,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Source Han Sans SC","Noto Sans SC",sans-serif;
+  --font-mono:"JetBrains Mono","SF Mono","Cascadia Code",Consolas,"Courier New",monospace;
+  --fs-xs:11px; --fs-sm:12px; --fs-base:13px; --fs-md:15px; --fs-lg:18px; --fs-xl:22px; --fs-metric:28px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px; --sp-12:48px;
+  --r-xs:3px; --r-sm:4px; --r-md:6px; --r-lg:10px; --r-xl:14px; --r-full:999px;
+  --shadow-xs:0 1px 2px rgba(26,29,40,.05);
+  --shadow-sm:0 1px 3px rgba(26,29,40,.06),0 1px 2px rgba(26,29,40,.04);
+  --shadow-md:0 4px 12px rgba(26,29,40,.07),0 1px 3px rgba(26,29,40,.05);
+  --shadow-lg:0 12px 32px rgba(26,29,40,.10),0 2px 8px rgba(26,29,40,.06);
+  --shadow-ring:0 0 0 3px var(--accent-100);
+  --border-subtle:var(--neutral-150); --border:var(--neutral-200); --border-strong:var(--neutral-300);
+}
+[data-density="compact"]{ --row-h:32px; --cell-px:8px; --card-pad:12px; --section-gap:16px; --fs-table:12px; --hit:28px; --chart-h:280px; }
+[data-density="comfortable"]{ --row-h:44px; --cell-px:14px; --card-pad:16px; --section-gap:20px; --fs-table:14px; --hit:44px; --chart-h:220px; }
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font-sans);background:var(--neutral-25);color:var(--neutral-700);font-size:var(--fs-base);line-height:20px;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font-family:inherit;font-size:inherit;color:inherit}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.tnum{font-variant-numeric:tabular-nums}
+a{color:var(--accent-700);text-decoration:none;cursor:pointer}
+a:hover{color:var(--accent-600);text-decoration:underline}
+
+/* ============ App Shell ============ */
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:240px;flex-shrink:0;background:var(--neutral-0);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.sidebar.collapsed{width:56px}
+.sidebar.collapsed .sb-label{display:none}
+.sidebar-head{padding:var(--sp-3);border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:var(--sp-2)}
+.brand{font-weight:600;color:var(--neutral-800);font-size:var(--fs-md)}
+.brand-dot{width:18px;height:18px;border-radius:var(--r-sm);background:linear-gradient(135deg,var(--accent-500),var(--accent-700));display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700}
+.sb-nav{padding:var(--sp-2);flex:1;overflow:auto}
+.sb-section-title{font-size:10px;color:var(--neutral-400);text-transform:uppercase;letter-spacing:.5px;padding:var(--sp-3) var(--sp-3) var(--sp-1);font-weight:600}
+.sb-item{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);border-radius:var(--r-md);color:var(--neutral-600);cursor:pointer;font-size:var(--fs-base);position:relative;height:32px;margin:1px 0}
+.sb-item:hover{background:var(--neutral-50);color:var(--neutral-800)}
+.sb-item.active{background:var(--accent-50);color:var(--accent-700);font-weight:500}
+.sb-item.active::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:3px;background:var(--accent-600);border-radius:var(--r-full)}
+.sb-item .sb-badge{margin-left:auto;background:var(--danger-500);color:#fff;font-size:10px;padding:0 6px;height:16px;border-radius:var(--r-full);display:flex;align-items:center;font-weight:600}
+.sb-sub{padding-left:var(--sp-6);font-size:var(--fs-sm);color:var(--neutral-500)}
+.sb-sub .sb-item{height:28px}
+.sb-foot{padding:var(--sp-2) var(--sp-3);border-top:1px solid var(--border-subtle);font-size:var(--fs-xs);color:var(--neutral-500);display:flex;align-items:center;gap:var(--sp-2)}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:var(--success-500)}
+
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{height:56px;background:var(--neutral-0);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:var(--sp-3);padding:0 var(--sp-4);flex-shrink:0}
+.breadcrumb{display:flex;align-items:center;gap:var(--sp-1);font-size:var(--fs-sm);color:var(--neutral-500);min-width:0;overflow:hidden}
+.breadcrumb span{white-space:nowrap}
+.breadcrumb .cur{color:var(--neutral-800);font-weight:600}
+.breadcrumb .sep{color:var(--neutral-300)}
+.topbar-spacer{flex:1}
+.search-box{width:320px;height:30px;border:1px solid var(--border);border-radius:var(--r-md);padding:0 var(--sp-3);background:var(--neutral-50);display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm);color:var(--neutral-400)}
+.search-box .kbd{margin-left:auto;font-family:var(--font-mono);font-size:10px;background:var(--neutral-100);padding:1px 5px;border-radius:var(--r-xs)}
+.activity-ind{display:flex;align-items:center;gap:var(--sp-1);font-size:var(--fs-sm);color:var(--neutral-600)}
+.pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--accent-600);box-shadow:0 0 0 0 var(--accent-600);animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,75,209,.5)}70%{box-shadow:0 0 0 8px rgba(63,75,209,0)}100%{box-shadow:0 0 0 0 rgba(63,75,209,0)}}
+.density-toggle{display:flex;align-items:center;gap:var(--sp-1);font-size:var(--fs-sm);color:var(--neutral-600);border:1px solid var(--border);border-radius:var(--r-md);padding:3px var(--sp-2)}
+.density-toggle button{padding:3px 8px;border-radius:var(--r-sm);font-size:var(--fs-xs);color:var(--neutral-500)}
+.density-toggle button.on{background:var(--neutral-800);color:#fff}
+
+.content{flex:1;overflow:auto;position:relative}
+
+/* ============ 通用组件 ============ */
+.card{background:var(--neutral-0);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm)}
+.btn{display:inline-flex;align-items:center;gap:var(--sp-1);height:32px;padding:0 var(--sp-3);border-radius:var(--r-md);font-size:var(--fs-sm);font-weight:500;transition:all .12s}
+.btn-primary{background:var(--accent-600);color:#fff}
+.btn-primary:hover{background:var(--accent-700)}
+.btn-secondary{background:var(--neutral-0);border:1px solid var(--border);color:var(--neutral-700)}
+.btn-secondary:hover{background:var(--neutral-50);border-color:var(--border-strong)}
+.btn-ghost{color:var(--neutral-600)}
+.btn-ghost:hover{background:var(--neutral-50)}
+.chip{display:inline-flex;align-items:center;gap:3px;height:22px;padding:0 var(--sp-2);border-radius:var(--r-sm);font-size:var(--fs-xs);background:var(--neutral-0);border:1px solid var(--border);color:var(--neutral-600);white-space:nowrap}
+.chip.sel{background:var(--accent-50);border-color:var(--accent-200);color:var(--accent-700)}
+.chip.warn{background:var(--warning-50);border-color:#f0d9a8;color:var(--warning-600)}
+.chip.info{background:var(--info-50);border-color:#cfe0f7;color:var(--info-600)}
+.chip.removable::after{content:"✕";margin-left:2px;opacity:.5;cursor:pointer}
+.badge{display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 var(--sp-2);border-radius:var(--r-full);font-size:var(--fs-xs);font-weight:600}
+.badge-accent{background:var(--accent-50);color:var(--accent-700);border:1px solid var(--accent-200)}
+.badge-neutral{background:var(--neutral-50);color:var(--neutral-500);border:1px solid var(--neutral-200)}
+.badge-new{background:var(--accent-600);color:#fff}
+.status-badge{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 var(--sp-2);border-radius:var(--r-sm);font-size:var(--fs-xs);font-weight:500}
+.status-badge .dot{width:7px;height:7px;border-radius:50%}
+.sb-pending{background:var(--neutral-50);color:var(--neutral-600)} .sb-pending .dot{border:1.5px solid var(--neutral-400);background:transparent}
+.sb-running{background:var(--accent-50);color:var(--accent-700)} .sb-running .dot{background:var(--accent-600);animation:pulse 1.6s infinite}
+.sb-done{background:var(--success-50);color:var(--success-600)} .sb-done .dot{background:var(--success-500)}
+.sb-warn{background:var(--warning-50);color:var(--warning-600)} .sb-warn .dot{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:7px solid var(--warning-500)}
+.sb-failed{background:var(--danger-50);color:var(--danger-600)} .sb-failed .dot{background:var(--danger-500)}
+.source-badge{display:inline-flex;align-items:center;gap:3px;font-size:var(--fs-xs);padding:1px var(--sp-2);border-radius:var(--r-xs)}
+.src-agent{background:var(--info-50);color:var(--info-600)}
+.src-human{background:var(--neutral-100);color:var(--neutral-600)}
+.seg{display:inline-flex;background:var(--neutral-100);border-radius:var(--r-md);padding:2px;gap:1px}
+.seg button{height:26px;padding:0 var(--sp-3);border-radius:var(--r-sm);font-size:var(--fs-xs);color:var(--neutral-500);font-weight:500}
+.seg button.on{background:var(--neutral-0);color:var(--neutral-800);box-shadow:var(--shadow-xs)}
+.tbl{width:100%;border-collapse:collapse;font-size:var(--fs-table)}
+.tbl th{background:var(--neutral-50);text-align:left;font-weight:600;color:var(--neutral-600);font-size:var(--fs-xs);padding:0 var(--cell-px);height:36px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:2}
+.tbl td{padding:0 var(--cell-px);height:var(--row-h);border-bottom:1px solid var(--border-subtle);color:var(--neutral-700);vertical-align:middle}
+.tbl tr:hover td{background:var(--neutral-50)}
+.tbl tr.sel td{background:var(--accent-50)}
+.kv-key{font-family:var(--font-mono);color:var(--neutral-500);font-size:var(--fs-sm)}
+.kv-val{font-family:var(--font-mono);color:var(--neutral-800);font-size:var(--fs-sm)}
+.type-ic{font-size:10px;color:var(--neutral-400);margin-right:4px;font-family:var(--font-mono)}
+.view{padding:var(--sp-4);max-width:1400px;margin:0 auto}
+.toolbar{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-3) 0;flex-wrap:wrap}
+.page-title{font-size:var(--fs-lg);font-weight:600;color:var(--neutral-800);margin-bottom:var(--sp-2)}
+.drawer-overlay{position:fixed;inset:0;background:rgba(26,29,40,.2);z-index:50;opacity:0;pointer-events:none;transition:opacity .2s}
+.drawer-overlay.open{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:-460px;width:440px;max-width:100vw;height:100vh;background:var(--neutral-0);box-shadow:var(--shadow-lg);z-index:51;transition:right .25s;display:flex;flex-direction:column}
+.drawer.open{right:0}
+.drawer-head{padding:var(--sp-4);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.drawer-body{flex:1;overflow:auto;padding:var(--sp-4)}
+.toast-wrap{position:fixed;right:var(--sp-4);bottom:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-2);z-index:60}
+.toast{background:var(--neutral-0);border:1px solid var(--border);box-shadow:var(--shadow-lg);border-radius:var(--r-lg);padding:var(--sp-3) var(--sp-4);font-size:var(--fs-sm);color:var(--neutral-700);max-width:360px;animation:toastIn .3s}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* missing-value hatch */
+.hatch{background:repeating-linear-gradient(45deg,var(--neutral-100) 0 4px,transparent 4px 8px)}
+
+/* ============ 文献库 ============ */
+.lit-row{display:grid;grid-template-columns:1fr auto auto auto;gap:var(--sp-3);align-items:center;padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border-subtle);cursor:pointer}
+.lit-row:hover{background:var(--neutral-50)}
+.lit-title{font-size:var(--fs-md);color:var(--neutral-800);font-weight:500}
+.lit-row:hover .lit-title{color:var(--accent-700)}
+.lit-meta{font-size:var(--fs-sm);color:var(--neutral-500);margin-top:2px}
+.read-dot{width:8px;height:8px;border-radius:50%}
+.read-dot.read{background:var(--neutral-400)}
+.read-dot.reading{background:transparent;border:1.5px solid var(--accent-500)}
+.read-dot.unread{background:transparent;border:1.5px solid var(--neutral-300)}
+
+/* ============ Idea 树（画布） ============ */
+.tree-canvas{position:relative;width:100%;min-height:560px;background:var(--neutral-25);background-image:radial-gradient(var(--neutral-150) 1px,transparent 1px);background-size:24px 24px;border-radius:var(--r-lg);overflow:hidden}
+.tree-svg{position:absolute;inset:0;pointer-events:none}
+.idea-node{position:absolute;width:200px;min-height:72px;background:var(--neutral-0);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm);padding:var(--sp-3);cursor:pointer;transition:box-shadow .12s,transform .12s}
+.idea-node:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
+.idea-node .left-bar{position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:var(--r-full)}
+.idea-node.active .left-bar{background:var(--accent-600)}
+.idea-node.validated{background:var(--success-50)} .idea-node.validated .left-bar{background:var(--success-500)}
+.idea-node.abandoned{opacity:.45;filter:grayscale(.6);border-style:dashed;border-color:var(--neutral-300)}
+.idea-node .nd-title{font-size:var(--fs-md);font-weight:600;color:var(--neutral-800);line-height:1.3;margin-left:var(--sp-2)}
+.idea-node .nd-meta{font-size:var(--fs-xs);color:var(--neutral-500);margin-top:4px;margin-left:var(--sp-2);font-family:var(--font-mono)}
+.idea-node.validated .nd-check{position:absolute;top:6px;right:8px;color:var(--success-500);font-size:12px}
+
+/* ============ 矩阵 ============ */
+.matrix-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--neutral-0)}
+.matrix{border-collapse:separate;border-spacing:0;font-size:var(--fs-sm)}
+.matrix th,.matrix td{padding:0;vertical-align:middle}
+.matrix thead th{position:sticky;top:0;background:var(--neutral-50);border-bottom:1px solid var(--border);border-right:1px solid var(--border-subtle);padding:var(--sp-2) var(--sp-2);font-size:var(--fs-xs);font-weight:600;color:var(--neutral-600);text-align:center;z-index:3;min-width:88px}
+.matrix thead th .wk{font-family:var(--font-mono);color:var(--neutral-800)}
+.matrix thead th .cnt{color:var(--neutral-400);font-size:10px;margin-top:2px}
+.matrix .row-hdr{position:sticky;left:0;background:var(--neutral-0);border-right:1px solid var(--border);padding:var(--sp-2) var(--sp-3);text-align:left;width:168px;min-width:168px;z-index:2;box-shadow:2px 0 4px rgba(0,0,0,.03)}
+.matrix .row-hdr .vname{font-family:var(--font-mono);font-weight:600;color:var(--neutral-800);font-size:var(--fs-sm)}
+.matrix .row-hdr .vhash{font-family:var(--font-mono);font-size:10px;color:var(--neutral-400)}
+.matrix .row-hdr .vmeta{font-size:var(--fs-xs);color:var(--neutral-500);margin-top:2px}
+.matrix .cell{width:88px;min-width:88px;height:40px;text-align:center;cursor:pointer;border-right:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle);position:relative;transition:box-shadow .12s}
+[data-density="comfortable"] .matrix .cell{width:104px;min-width:104px;height:56px}
+.matrix .cell:hover{box-shadow:var(--shadow-md);z-index:1;border-color:var(--accent-300)}
+.matrix .cell .big{font-size:var(--fs-md);font-weight:600;color:var(--neutral-800);font-family:var(--font-mono)}
+.matrix .cell.dark .big{color:var(--neutral-0)}
+.matrix .cell .topr{position:absolute;top:3px;right:5px;font-size:9px;font-family:var(--font-mono)}
+.matrix .cell .stk{position:absolute;bottom:0;left:0;right:0;height:3px;display:flex}
+.matrix .cell .stk span{display:block;height:100%}
+.matrix .cell.empty{background:var(--neutral-50)}
+.matrix .cell.empty .big,.matrix .cell.empty .topr,.matrix .cell.empty .stk{display:none}
+.heat-legend{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-xs);color:var(--neutral-500)}
+.heat-bar{width:120px;height:8px;border-radius:var(--r-full);background:linear-gradient(90deg,var(--seq-0),var(--seq-1),var(--seq-2),var(--seq-3),var(--seq-4))}
+
+/* ============ 实验详情 ============ */
+.exp-head{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;padding-bottom:var(--sp-4);border-bottom:1px solid var(--border-subtle);margin-bottom:var(--sp-4)}
+.exp-head h1{font-size:var(--fs-lg);color:var(--neutral-800);font-weight:600}
+.exp-head .meta-line{font-size:var(--fs-sm);color:var(--neutral-500);margin-top:2px}
+.metric-big{display:flex;flex-direction:column;gap:2px}
+.metric-big .k{font-size:var(--fs-xs);color:var(--neutral-500);font-family:var(--font-mono)}
+.metric-big .v{font-size:var(--fs-metric);font-weight:600;color:var(--neutral-900);font-family:var(--font-mono);line-height:1}
+.metric-big .d{font-size:var(--fs-sm);color:var(--neutral-500);font-family:var(--var(--font-mono))}
+.metric-delta{font-family:var(--font-mono);font-size:var(--fs-sm)}
+.metric-delta.good{color:var(--success-600)} .metric-delta.bad{color:var(--danger-600)} .metric-delta.neutral{color:var(--neutral-600)}
+.grid-2{display:grid;grid-template-columns:1.5fr 1fr;gap:var(--sp-6)}
+@media(max-width:900px){.grid-2{grid-template-columns:1fr}}
+.section-title{font-size:var(--fs-md);font-weight:600;color:var(--neutral-800);margin-bottom:var(--sp-3);display:flex;align-items:center;gap:var(--sp-2)}
+.kv-panel{border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.kv-row{display:grid;grid-template-columns:40% 60%;padding:0 var(--cell-px);height:var(--row-h);border-bottom:1px solid var(--border-subtle);align-items:center}
+.kv-row:last-child{border-bottom:none}
+.kv-row.same{color:var(--neutral-400)}
+.kv-row.changed{background:var(--accent-50);position:relative}
+.kv-row.changed::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent-600)}
+.kv-row.only-l,.kv-row.only-r{background:var(--warning-50)}
+.kv-row.only-l::before,.kv-row.only-r::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--warning-500)}
+.analysis-card{border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--sp-4);background:var(--neutral-0)}
+.analysis-card .ac-head{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-xs);color:var(--neutral-500);margin-bottom:var(--sp-3)}
+.analysis-card .ac-body{font-size:var(--fs-base);color:var(--neutral-700);line-height:1.7}
+.analysis-card .ac-body p{margin-bottom:var(--sp-2)}
+.analysis-card .metric-chip{display:inline-block;font-family:var(--font-mono);font-size:var(--fs-xs);background:var(--accent-50);border:1px solid var(--accent-200);color:var(--accent-700);padding:1px 6px;border-radius:var(--r-sm);cursor:default}
+.analysis-card .metric-chip:hover{background:var(--accent-100)}
+
+/* ============ Diff 表 ============ */
+.diff-tbl{width:100%;border-collapse:collapse;font-size:var(--fs-table)}
+.diff-tbl th{background:var(--neutral-50);text-align:left;font-weight:600;color:var(--neutral-600);font-size:var(--fs-xs);padding:0 var(--cell-px);height:36px;border-bottom:1px solid var(--border);position:sticky;top:0}
+.diff-tbl td{padding:0 var(--cell-px);height:var(--row-h);border-bottom:1px solid var(--border-subtle);font-family:var(--font-mono);font-size:var(--fs-sm);color:var(--neutral-700)}
+.diff-tbl tr.same td{color:var(--neutral-400)}
+.diff-tbl tr.changed td{background:var(--accent-50)}
+.diff-tbl tr.changed td:nth-child(2){color:var(--neutral-400);text-decoration:line-through}
+.diff-tbl tr.changed td:nth-child(3){color:var(--accent-700);font-weight:600}
+.diff-tbl tr.only-l td,.diff-tbl tr.only-r td{background:var(--warning-50)}
+.diff-tbl .col-key{width:32%} .diff-tbl .col-a{width:28%} .diff-tbl .col-b{width:28%} .diff-tbl .col-d{width:12%;text-align:right}
+
+/* 运行中进度条（不确定态，桌面「今日动态」与实验详情复用） */
+.m-progress{height:6px;border-radius:var(--r-full);background:var(--accent-200);overflow:hidden;position:relative;margin-top:var(--sp-2)}
+.m-progress::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent 0 6px,var(--accent-600) 6px 12px);animation:flow 1.4s linear infinite;opacity:.7}
+@keyframes flow{from{background-position:0 0}to{background-position:24px 0}}
+
+/* inbox proposal */
+.proposal{border:1px solid var(--border);border-left:3px solid var(--accent-600);border-radius:var(--r-lg);padding:var(--sp-4);background:var(--neutral-0);margin-bottom:var(--sp-3)}
+.proposal .pr-head{font-size:var(--fs-xs);color:var(--neutral-500);margin-bottom:var(--sp-2)}
+.proposal .pr-title{font-size:var(--fs-md);font-weight:600;color:var(--neutral-800);margin-bottom:var(--sp-3)}
+.proposal .pr-body{font-size:var(--fs-sm);color:var(--neutral-700);line-height:1.6;margin-bottom:var(--sp-3)}
+.mini-diff{border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:var(--sp-2);font-family:var(--font-mono);font-size:var(--fs-xs);margin-bottom:var(--sp-3);background:var(--neutral-25)}
+.mini-diff .md-row{display:grid;grid-template-columns:1fr 60px 60px 20px;gap:var(--sp-2);padding:2px 0}
+.mini-diff .md-row.chg span:nth-child(3){color:var(--accent-700);font-weight:600}
+.permission-bar{background:var(--neutral-50);border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:var(--sp-3);font-size:var(--fs-sm);color:var(--neutral-600);margin-bottom:var(--sp-4);line-height:1.6}
+
+.empty{text-align:center;padding:var(--sp-12) var(--sp-4);color:var(--neutral-400)}
+.empty .ic{font-size:40px;margin-bottom:var(--sp-3);opacity:.5}
+.empty .t{font-size:var(--fs-md);color:var(--neutral-600);margin-bottom:var(--sp-1)}
+
+/* line scan chart */
+.chart-card{background:var(--neutral-0);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--sp-4);box-shadow:var(--shadow-sm)}
+.chart-card svg{display:block;width:100%}
+.axis-pick{display:flex;gap:var(--sp-2);align-items:center;font-size:var(--fs-sm);color:var(--neutral-600)}
+select.styled{height:28px;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 var(--sp-2);background:var(--neutral-0);font-size:var(--fs-sm);color:var(--neutral-700)}
+</style>
+</head>
+<body>
+<div class="app" id="app" data-density="compact">
+
+<!-- ============ Sidebar ============ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-head" id="dir-switch" style="cursor:pointer;flex-wrap:wrap">
+    <span class="brand-dot">IF</span>
+    <div class="sb-label" style="flex:1;min-width:0">
+      <div style="font-size:10px;color:var(--neutral-400);line-height:1.2">研究方向</div>
+      <div id="dir-name" style="font-weight:600;color:var(--neutral-800);font-size:var(--fs-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">多层网络影响力最大化</div>
+    </div>
+    <span class="sb-label" style="color:var(--neutral-400)">▾</span>
+  </div>
+  <div id="dir-menu" style="display:none;position:absolute;left:8px;top:52px;width:232px;z-index:40;background:var(--neutral-0);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);padding:6px"></div>
+  <nav class="sb-nav">
+    <div class="sb-item" data-route="today"><span>○</span><span class="sb-label">今日动态</span><span class="sb-badge" id="badge-today" style="display:none"></span></div>
+    <div class="sb-item" data-route="literature"><span>📄</span><span class="sb-label">文献库</span></div>
+    <div class="sb-item active" data-route="ideas"><span>🌳</span><span class="sb-label">Idea 分支树</span></div>
+    <div class="sb-item" data-route="experiments"><span>🧪</span><span class="sb-label">实验总览</span></div>
+    <div class="sb-item" data-route="inbox"><span>📥</span><span class="sb-label">Agent 收件箱</span><span class="sb-badge" id="badge-inbox">2</span></div>
+    <div class="sb-section-title sb-label">IDEA 快捷跳转</div>
+    <div id="sb-ideas"></div>
+    <div class="sb-sub"><div class="sb-item sb-label" style="color:var(--accent-600)"><span>+</span><span class="sb-label">新建 Idea（新分支）</span></div></div>
+  </nav>
+  <div class="sb-foot">
+    <span class="sync-dot"></span><span class="sb-label">索引已同步 · 2 分钟前</span>
+  </div>
+</aside>
+
+<!-- ============ Main ============ -->
+<div class="main">
+  <header class="topbar">
+    <div class="breadcrumb" id="crumb"></div>
+    <div class="topbar-spacer"></div>
+    <div class="search-box">🔍 搜索文献 / Idea / 实验 / 参数值<span class="kbd">⌘K</span></div>
+    <div class="activity-ind" id="act-ind" style="display:none"><span class="pulse-dot"></span><span id="act-cnt">0</span> 运行中</div>
+    <div class="density-toggle">密度<button id="d-compact" class="on">致密</button><button id="d-comfort">舒适</button></div>
+  </header>
+  <main class="content" id="content"></main>
+</div>
+
+<!-- drawer + toast containers -->
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="drawer"><div class="drawer-head"><span id="drawer-title" style="font-weight:600;color:var(--neutral-800)"></span><button class="btn btn-ghost" id="drawer-close">✕</button></div><div class="drawer-body" id="drawer-body"></div></div>
+<div class="toast-wrap" id="toast-wrap"></div>
+</div>
+
+<script>
+/* ============================================================
+   Idea Forge 原型 —— 单文件，数据驱动，字段名绝不硬编码于 UI 逻辑
+   ============================================================ */
+
+/* ---------- 工具函数 ---------- */
+const $=(s,el=document)=>el.querySelector(s);
+const $$=(s,el=document)=>[...el.querySelectorAll(s)];
+const el=(tag,cls,html)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;};
+const fmtNum=v=>{if(v==null||v===undefined)return '—';if(typeof v!=='number')return v;return Math.abs(v)>=100?Math.round(v):Math.abs(v)>=1?v.toFixed(3):v.toFixed(4);};
+const fmtSize=b=>{if(b<1024)return b+'B';if(b<1048576)return (b/1024).toFixed(1)+'KB';return (b/1048576).toFixed(1)+'MB';};
+const fmtDur=s=>{if(s<60)return s+'秒';if(s<3600)return Math.floor(s/60)+'分';return Math.floor(s/3600)+'时'+Math.floor(s%3600/60)+'分';};
+const fmtDate=ts=>{const d=new Date(ts);return `${d.getMonth()+1}-${String(d.getDate()).padStart(2,'0')}`;};
+const isoWeek=ts=>{const d=new Date(ts);d.setHours(0,0,0,0);const day=d.getDay()||7;d.setDate(d.getDate()-(day-1));return d.getTime();};
+const unionKeys=arr=>{const s=new Set();arr.forEach(o=>o&&Object.keys(o).forEach(k=>s.add(k)));return[...s].sort();};
+const valType=v=>{if(typeof v==='boolean')return 'bool';if(typeof v==='number')return 'num';if(Array.isArray(v))return 'list';return 'str';};
+const typeIcon={num:'#',str:'"',bool:'☑',list:'[]'};
+const isNumericKey=(exps,key)=>{let n=0,c=0;exps.forEach(e=>{if(e.metrics&&key in e.metrics){c++;if(typeof e.metrics[key]==='number')n++;}else if(e.params&&key in e.params){c++;if(typeof e.params[key]==='number')n++;}});return c>0&&n/c>=0.8;};
+// 热力色（顺序色板 5 档），值域 [min,max]
+const heatColor=(v,min,max)=>{if(v==null||min===max)return null;const t=Math.min(1,Math.max(0,(v-min)/(max-min)));const stops=[['#F1F3FE','#1A1D28'],['#C3CBFB','#1A1D28'],['#9DA9F7','#1A1D28'],['#5563EA','#FFFFFF'],['#333CA8','#FFFFFF']];const idx=Math.min(4,Math.floor(t*5));return stops[idx];};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+/* ---------- Mock 数据 ---------- */
+const DATA={directions:[
+  {id:'d1',name:'多层网络影响力最大化',repo:'idea-forge-im',gitUrl:'github.com/hrlmmm/idea-forge-im',color:'#3F4BD1',desc:'复杂网络种子选择，Transformer 学影响力向量'},
+  {id:'d2',name:'有向网络鲁棒性优化',repo:'idea-forge-robust',gitUrl:'github.com/hrlmmm/idea-forge-robust',color:'#5B9E8A',desc:'有向图结构鲁棒性，攻击/扰动下的连通性'},
+],literature:[],ideas:[],versions:[],experiments:[]};
+
+// 文献
+DATA.literature=[
+  {id:'p1',title:'DeepIS: Deep Influence Propagation on Social Networks',authors:['Qiu J.','Tang J.'],year:2020,venue:'IJCAI',tags:['复杂网络','影响力最大化','深度学习'],derived:2,read:'read',notes:'用 GNN 学传播概率'},
+  {id:'p2',title:'Multi-layer Influence Maximization in Social Networks',authors:['Zhang L.'],year:2022,venue:'WWW',tags:['多层网络','影响力最大化'],derived:1,read:'read',notes:'提出层间耦合权重'},
+  {id:'p3',title:'Attention Is All You Need',authors:['Vaswani A.','et al.'],year:2017,venue:'NeurIPS',tags:['Transformer','注意力'],derived:0,read:'read',notes:'基础'},
+  {id:'p4',title:'Graph Transformer Networks for Node Classification',authors:['Cai T.'],year:2020,venue:'NeurIPS',tags:['图神经网络','Transformer'],derived:1,read:'reading',notes:'GTN 学习元路径'},
+  {id:'p5',title:'CELF: Scalable Influence Maximization in Social Networks',authors:['Leskovec J.'],year:2007,venue:'KDD',tags:['影响力最大化','贪心'],derived:1,read:'read',notes:'CELF 优化'},
+  {id:'p6',title:'A Survey of Complex Network Science',authors:['Barabási A.'],year:2016,venue:'Physica A',tags:['复杂网络','综述'],derived:0,read:'unread',notes:''},
+  {id:'p7',title:'Influence Propagation via Graph Neural Networks',authors:['Wang H.'],year:2023,venue:'ICML',tags:['GNN','影响力最大化'],derived:0,read:'unread',notes:''},
+  {id:'p8',title:'Layer Coupling in Multilayer Networks',authors:['Chen Y.'],year:2021,venue:'Nature Comm.',tags:['多层网络','耦合'],derived:1,read:'read',notes:''},
+  {id:'p9',title:'Learning to Maximize Influence with Transformers',authors:['Park S.'],year:2023,venue:'AAAI',tags:['Transformer','影响力最大化'],derived:1,read:'read',notes:''},
+  {id:'p10',title:'Variational Graph Auto-Encoders',authors:['Kipf T.'],year:2016,venue:'arXiv',tags:['GNN','自编码器'],derived:0,read:'unread',notes:''},
+];
+
+// Ideas
+DATA.ideas=[
+  {id:'i1',parentId:null,name:'影响力最大化主干',status:'active',hypothesis:'用 Transformer 学习节点影响力向量，结合传播模型选种子集',x:80,y:240,versionCount:3,expCount:34,bestMetric:{key:'influence_spread',value:0.482},relatedPapers:['p1','p2','p9']},
+  {id:'i1b',parentId:'i1',name:'贪心+度中心性',status:'active',hypothesis:'混合贪心与度中心性做种子选择，作为 baseline',x:360,y:140,versionCount:2,expCount:8,bestMetric:{key:'influence_spread',value:0.31},relatedPapers:['p5']},
+  {id:'i1c',parentId:'i1',name:'CELF 优化',status:'validated',hypothesis:'用 CELF 加速种子选择',x:360,y:340,versionCount:1,expCount:4,bestMetric:{key:'influence_spread',value:0.28},relatedPapers:['p5']},
+  {id:'i2',parentId:null,name:'传播模型对比',status:'active',hypothesis:'对比 IC/LT/SIR 在多层网络上的传播差异',x:80,y:480,versionCount:2,expCount:5,bestMetric:{key:'convergence_step',value:14},relatedPapers:['p2','p8']},
+  {id:'i2b',parentId:'i2',name:'多层耦合',status:'abandoned',hypothesis:'尝试层间强耦合，效果反而下降',x:360,y:480,versionCount:1,expCount:2,bestMetric:null,relatedPapers:['p8']},
+];
+
+// 版本
+DATA.versions=[
+  {id:'v_a1',ideaId:'i1',name:'a1',gitRef:'3f2a1c',status:'active',created:Date.parse('2026-06-28')},
+  {id:'v_a2',ideaId:'i1',name:'a2',gitRef:'8b1d4f',status:'active',created:Date.parse('2026-07-04')},
+  {id:'v_a3',ideaId:'i1',name:'a3',gitRef:'c07e2a',status:'active',created:Date.parse('2026-07-11')},
+  {id:'v_b1',ideaId:'i1b',name:'b1',gitRef:'7e3d10',status:'active',created:Date.parse('2026-07-18')},
+  {id:'v_b2',ideaId:'i1b',name:'b2',gitRef:'a5f901',status:'abandoned',created:Date.parse('2026-07-22')},
+  {id:'v_c1',ideaId:'i1c',name:'c1',gitRef:'f2c8b9',status:'active',created:Date.parse('2026-07-19')},
+  {id:'v_d1',ideaId:'i2',name:'d1',gitRef:'91ab02',status:'active',created:Date.parse('2026-07-25')},
+  {id:'v_d2',ideaId:'i2',name:'d2',gitRef:'3c4d77',status:'active',created:Date.parse('2026-07-30')},
+];
+
+// 生成实验（参数网格 + 状态多样）
+function genExperiments(){
+  const exps=[];let id=40;
+  const add=(versionId,ideaId,params,metrics,status,hrsAgo,runtime,analysis)=>{
+    id++;const e={id:'exp-'+String(id).padStart(3,'0'),ideaId,versionId,name:`run-${id}`,status,created:Date.now()-hrsAgo*3600000,finishedAt:status==='done'||status==='failed'?Date.now()-hrsAgo*3600000+runtime*1000:null,runtimeS:runtime,params,metrics,analysis};
+    exps.push(e);
+  };
+  // v_a2 主体：lr × dropout 网格 + seed 重复 —— 体现变体族
+  const lrs=[0.0005,0.001,0.005,0.01];
+  const dops=[0.0,0.1,0.3];
+  lrs.forEach((lr,li)=>{
+    dops.forEach((dp,di)=>{
+      [1,2].forEach(seed=>{
+        const noise=(seed-1)*0.005-(li*0.01);
+        const inf=0.18+li*0.06+di*0.03+noise+ (lr>=0.01?-0.02:0);
+        add('v_a2','i1',{lr,dropout:dp,hidden_dim:128,num_layers:2,seed,heads:4,batch_size:64,epochs:50,dataset:'Twitter-IM'},
+          {influence_spread:Math.max(0,inf),convergence_step:Math.round(20-li*2-di),peak_memory_mb:Math.round(2400+li*200),runtime_s:Math.round(3600+li*900)});
+      });
+    });
+  });
+  // v_a1 早期（少量）
+  add('v_a1','i1',{lr:0.001,dropout:0.0,hidden_dim:64,num_layers:1,seed:1,heads:2,batch_size:32,epochs:30,dataset:'Twitter-IM'},{influence_spread:0.201,convergence_step:24,peak_memory_mb:1800,runtime_s:4200},'done',72,4200);
+  add('v_a1','i1',{lr:0.0005,dropout:0.1,hidden_dim:64,num_layers:1,seed:1,heads:2,batch_size:32,epochs:30,dataset:'Twitter-IM'},{influence_spread:0.214,convergence_step:22,peak_memory_mb:1850,runtime_s:4350},'done',70,4350);
+  add('v_a1','i1',{lr:0.001,dropout:0.1,hidden_dim:64,num_layers:1,seed:2,heads:2,batch_size:32,epochs:30,dataset:'Twitter-IM'},{influence_spread:0.219,convergence_step:23,peak_memory_mb:1820,runtime_s:4300},'done',68,4300);
+  // v_a3 后期：调 hidden_dim
+  [[128,2,0.3,0.441],[256,2,0.3,0.466],[128,3,0.3,0.452],[256,3,0.3,0.482],[128,3,0.5,0.401]].forEach(([hd,nl,dp,inf])=>{
+    add('v_a3','i1',{lr:0.005,dropout:dp,hidden_dim:hd,num_layers:nl,seed:1,heads:4,batch_size:64,epochs:50,dataset:'Twitter-IM'},{influence_spread:inf,convergence_step:Math.round(16-(hd/128)),peak_memory_mb:Math.round(2400+hd*4),runtime_s:Math.round(4200+hd*8)},'done',24+(hd%5),4500);
+  });
+  // 一些 failed / running / pending
+  add('v_a3','i1',{lr:0.01,dropout:0.3,hidden_dim:256,num_layers:3,seed:1,heads:4,batch_size:64,epochs:50,dataset:'Twitter-IM'},null,'failed',12,1200);
+  add('v_a3','i1',{lr:0.005,dropout:0.3,hidden_dim:256,num_layers:4,seed:1,heads:8,batch_size:64,epochs:50,dataset:'Twitter-IM'},null,'running',1.5,null);
+  add('v_a3','i1',{lr:0.005,dropout:0.3,hidden_dim:128,num_layers:3,seed:2,heads:4,batch_size:64,epochs:50,dataset:'Twitter-IM'},null,'pending',0.2,null);
+  add('v_a3','i1',{lr:0.005,dropout:0.5,hidden_dim:128,num_layers:3,seed:1,heads:4,batch_size:64,epochs:50,dataset:'Twitter-IM'},{influence_spread:0.401,convergence_step:18,peak_memory_mb:2800,runtime_s:4600},'done',30,4600);
+  // b1 / b2 / c1 / d1 / d2 少量
+  add('v_b1','i1b',{lr:0.01,dropout:0.0,method:'greedy_degree',seed:1,topk:50},{influence_spread:0.285,convergence_step:14,runtime_s:120},'done',40,120);
+  add('v_b1','i1b',{lr:0.01,dropout:0.0,method:'greedy_degree',seed:2,topk:50},{influence_spread:0.291,convergence_step:14,runtime_s:118},'done',38,118);
+  add('v_b1','i1b',{lr:0.01,dropout:0.0,method:'greedy_degree',seed:3,topk:50},{influence_spread:0.288,convergence_step:15,runtime_s:122},'done',36,122);
+  add('v_b2','i1b',{lr:0.01,dropout:0.0,method:'celf',seed:1,topk:50},{influence_spread:0.31,convergence_step:12,runtime_s:240},'done',20,240);
+  add('v_c1','i1c',{method:'celf',lazy:true,topk:50,seed:1},{influence_spread:0.28,convergence_step:16,runtime_s:180},'done',26,180);
+  add('v_c1','i1c',{method:'celf',lazy:true,topk:100,seed:1},{influence_spread:0.295,convergence_step:18,runtime_s:220},'done',24,220);
+  add('v_d1','i2',{model:'IC',layers:3,coupling:0.2,seed:1},{convergence_step:14,infected_ratio:0.42},'done',18,300);
+  add('v_d1','i2',{model:'LT',layers:3,coupling:0.2,seed:1},{convergence_step:11,infected_ratio:0.38},'done',17,280);
+  add('v_d2','i2',{model:'SIR',layers:3,coupling:0.5,seed:1,beta:0.3},{convergence_step:9,infected_ratio:0.51},'done',4,320);
+  add('v_d2','i2',{model:'SIR',layers:3,coupling:0.5,seed:2,beta:0.3},{convergence_step:9,infected_ratio:0.49},'done',3,315);
+  add('v_d2','i2',{model:'SIR',layers:4,coupling:0.5,seed:1,beta:0.4},{convergence_step:7,infected_ratio:0.58},'done',2,340);
+
+  // 给部分 done 加 agent 分析
+  const setA=(i,a)=>{exps[i].analysis={source:'agent',author:'forge-agent-v1',text:a,createdAt:exps[i].finishedAt||Date.now(),read:false};};
+  setA(0,'本次把 lr 从 0.0005 提到 0.005，influence_spread 从 0.18 升到 0.24，涨幅明显。但 dropout=0 时在第 30 epoch 出现轻微过拟合（验证集 spread 不再上升）。建议下一步固定 lr=0.005，扫描 dropout ∈ {0.1, 0.3}，并尝试 hidden_dim=256。');
+  setA(8,'hidden_dim 提到 256 后 influence_spread=0.466，已接近当前最好。num_layers=3 比 2 提升约 +0.02，但 peak_memory_mb 涨到 3.4G，需要关注显存。建议保持此配置作为 a3 的基线。');
+  setA(9,'当前最佳：influence_spread=0.482（a3 / hidden=256 / layers=3 / dropout=0.3）。相对 a2 最佳 0.24 翻倍，方向正确。可考虑把 heads 从 4 提到 8 做消融。');
+  setA(22,'方法换 celf 后 influence_spread=0.28，不如 DeepIS 主干（0.482），符合预期 —— 这条作为 baseline 保留即可。');
+  setA(25,'SIR 模型在多层耦合 0.5、beta=0.4 下 infected_ratio=0.58，明显强于 IC。建议把这套传播参数固定，回头验证主干模型在此设定下的表现。');
+  return exps;
+}
+DATA.experiments=genExperiments();
+// 方向归属与 git 分支映射（一个方向 = 一个仓库；Idea = 该仓库的一条 git branch）
+DATA.literature.forEach((p,i)=>{p.directions=([0,1,2,4,5,7][i]!==undefined&&[0,1,2,4,5].includes(i))||i===8?['d1']:i===6?['d1','d2']:i===9?['d2']:i===3?['d1','d2']:i===7?['d1']:['d1'];});
+// 更清楚地赋值（覆盖上面，保证语义清晰）
+DATA.literature[0].directions=['d1'];DATA.literature[1].directions=['d1'];DATA.literature[2].directions=['d1'];
+DATA.literature[3].directions=['d1','d2']; // Attention is All You Need - 共用
+DATA.literature[4].directions=['d1'];DATA.literature[5].directions=['d1'];
+DATA.literature[6].directions=['d1','d2']; // 复杂网络综述 - 共用
+DATA.literature[7].directions=['d1'];
+DATA.literature[8].directions=['d1','d2']; // 层耦合 - 共用
+DATA.literature[9].directions=['d2'];     // VGA-E - 鲁棒性
+DATA.ideas.forEach(n=>{n.directionId=n.id.startsWith('i1')?'d1':'d2';n.gitBranch=(n.directionId==='d1'?'im/':'robust/')+n.name.replace(/\s/g,'-').toLowerCase();});
+DATA.versions.forEach(v=>{const idea=DATA.ideas.find(x=>x.id===v.ideaId);v.directionId=idea?idea.directionId:'d1';});
+// 辅助：是否属于当前方向
+function inDir(o){return o.directionId===state.directionId||(o.directions&&o.directions.includes(state.directionId));}
+function curDir(){return DATA.directions.find(d=>d.id===state.directionId);}
+function ideasOfDir(){return DATA.ideas.filter(n=>n.directionId===state.directionId);}
+
+// 标注一些 large artifact
+DATA.experiments.forEach(e=>{if(e.status==='done'&&(e.metrics?.peak_memory_mb||0)>3000){e.largeArtifacts=[{type:'model',name:'best.pt',size:412*1024*1024,path:'runs/a3/best.pt'},{type:'log',name:'train.log',size:240*1024,path:'runs/a3/train.log'}];}});
+
+/* ---------- 全局状态 ---------- */
+const state={route:'ideas',directionId:'d1',ideaId:'i1',versionId:'v_a2',expId:null,density:'compact',metricKey:'influence_spread',agg:'max',view:'matrix',diffSel:[],tableCols:[]};
+
+/* ---------- 渲染入口 ---------- */
+function render(){
+  setActivity();
+  setBadges();
+  renderDirSwitch();
+  $$('.sb-item[data-route]').forEach(e=>e.classList.toggle('active',e.dataset.route===state.route));
+  $('#crumb').innerHTML=renderCrumb();
+  const c=$('#content');
+  if(state.route==='literature')c.innerHTML=viewLiterature();
+  else if(state.route==='ideas')c.innerHTML=viewIdeasTree();
+  else if(state.route==='experiments')c.innerHTML=viewExperiments();
+  else if(state.route==='today')c.innerHTML=viewToday();
+  else if(state.route==='inbox')c.innerHTML=viewInbox();
+  else if(state.route==='exp-detail')c.innerHTML=viewExpDetail();
+  else if(state.route==='diff')c.innerHTML=viewDiff();
+  else if(state.route==='chart')c.innerHTML=viewChart();
+  bindView();
+}
+function renderCrumb(){
+  const d=curDir();
+  const dirSeg=`<span style="color:${d?d.color:'inherit'};font-weight:600" data-go="dir">${d?d.name:''}</span>`;
+  if(state.route==='literature')return `${dirSeg}<span class="sep">/</span><span class="cur">文献库</span>`;
+  if(state.route==='ideas')return `${dirSeg}<span class="sep">/</span><span class="cur">Idea 分支树</span>`;
+  if(state.route==='experiments')return `${dirSeg}<span class="sep">/</span><span class="cur">实验总览</span>`;
+  if(state.route==='today')return `<span class="cur">今日动态</span> <span style="font-size:var(--fs-xs);color:var(--neutral-400);font-weight:400">（跨方向）</span>`;
+  if(state.route==='inbox')return `<span class="cur">Agent 收件箱</span> <span style="font-size:var(--fs-xs);color:var(--neutral-400);font-weight:400">（跨方向）</span>`;
+  if(state.route==='exp-detail'){
+    const v=DATA.versions.find(x=>x.id===state.versionId);const idea=DATA.ideas.find(x=>x.id===state.ideaId);const e=DATA.experiments.find(x=>x.id===state.expId);
+    return `${dirSeg}<span class="sep">/</span><span data-go="idea">${idea?idea.name:''}</span><span class="sep">/</span><span data-go="version">${v?v.name:''}</span><span class="sep">/</span><span class="mono">${e?e.id:''}</span>`;
+  }
+  return '';
+}
+function setActivity(){
+  const running=DATA.experiments.filter(e=>e.status==='running');
+  const ind=$('#act-ind');
+  if(running.length){ind.style.display='flex';$('#act-cnt').textContent=running.length;}
+  else ind.style.display='none';
+}
+function setBadges(){
+  const unread=DATA.experiments.filter(e=>e.analysis&&!e.analysis.read).length;
+  const run=DATA.experiments.filter(e=>e.status==='running').length;
+  const bt=$('#badge-today');const n=unread+run;
+  if(n){bt.style.display='flex';bt.textContent=n;}else bt.style.display='none';
+}
+function renderDirSwitch(){
+  const d=curDir();
+  if(!d)return;
+  $('#dir-name').textContent=d.name;
+  const items=DATA.directions.map(x=>{
+    const ideas=DATA.ideas.filter(n=>n.directionId===x.id).length;
+    const exps=DATA.experiments.filter(e=>{const id=DATA.ideas.find(n=>n.id===e.ideaId);return id&&id.directionId===x.id;}).length;
+    const papers=DATA.literature.filter(p=>p.directions.includes(x.id)).length;
+    return `<div class="dir-opt" data-dir="${x.id}" style="padding:8px 10px;border-radius:var(--r-md);cursor:pointer;display:flex;flex-direction:column;gap:2px;${x.id===d.id?'background:var(--accent-50)':''}">
+      <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${x.color}"></span><span style="font-weight:600;color:var(--neutral-800);font-size:var(--fs-sm)">${x.name}</span>${x.id===d.id?'<span style="margin-left:auto;color:var(--accent-600);font-size:10px">当前</span>':''}</div>
+      <div style="font-size:10px;color:var(--neutral-400);font-family:var(--font-mono)">${x.gitUrl}</div>
+      <div style="font-size:10px;color:var(--neutral-500)">${ideas} ideas · ${exps} 实验 · ${papers} 文献</div>
+    </div>`;
+  }).join('');
+  $('#dir-menu').innerHTML=items+`<div style="padding:8px 10px;border-top:1px solid var(--border-subtle);margin-top:4px;font-size:var(--fs-xs);color:var(--neutral-400)">一个方向 = 一个独立仓库（本地目录 + git）。切换后文献/Idea/实验均按此方向过滤。</div>`;
+  // 同步侧栏 Idea 快捷跳转（仅当前方向）
+  const roots=DATA.ideas.filter(n=>n.directionId===state.directionId&&!n.parentId);
+  let sb='';
+  const renderNode=(n,depth)=>{
+    const ch=DATA.ideas.filter(x=>x.parentId===n.id);
+    const prefix=depth===0?'·':'└';
+    const pad=depth===0?'':'padding-left:'+(12+depth*16)+'px';
+    const st=n.status==='abandoned'?'style="opacity:.5"':'';
+    sb+=`<div class="sb-sub" style="${pad}"><div class="sb-item" data-jump-idea="${n.id}" ${st}><span>${prefix}</span><span class="sb-label">${n.name} <span style="color:var(--neutral-400)">v${n.versionCount}</span>${n.status==='abandoned'?' <span style="color:var(--neutral-400);font-size:10px">已放弃</span>':''}</span></div></div>`;
+    ch.forEach(c=>renderNode(c,depth+1));
+  };
+  roots.forEach(r=>renderNode(r,0));
+  $('#sb-ideas').innerHTML=sb||'<div class="sb-sub"><span class="sb-label" style="color:var(--neutral-400);font-size:var(--fs-xs);padding:4px 12px">本方向暂无 Idea</span></div>';
+}
+
+/* ---------- 视图：今日 ---------- */
+function viewToday(){
+  const running=DATA.experiments.filter(e=>e.status==='running');
+  const today=DATA.experiments.filter(e=>(e.status==='done'||e.status==='failed')&&e.finishedAt&&Date.now()-e.finishedAt<36*3600000).sort((a,b)=>b.finishedAt-a.finishedAt);
+  const unread=DATA.experiments.filter(e=>e.analysis&&!e.analysis.read);
+  let h=`<div class="view"><div class="page-title">今日动态</div>`;
+  if(running.length){
+    h+=`<div class="section-title">进行中 (${running.length})</div>`;
+    running.forEach(e=>{const v=DATA.versions.find(x=>x.id===e.versionId);const idea=DATA.ideas.find(x=>x.id===e.ideaId);
+      h+=`<div class="card" style="padding:var(--sp-4);margin-bottom:var(--sp-3)">
+        <div style="font-size:var(--fs-xs);color:var(--neutral-500)">${idea.name} / ${v.name}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0">
+          <span style="font-size:var(--fs-md);font-weight:600;color:var(--neutral-800)">${e.id}</span>
+          <span class="status-badge sb-running"><span class="dot"></span>运行中</span>
+        </div>
+        <div class="m-progress"></div>
+        <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:6px">已运行 ${fmtDur((Date.now()-e.created)/1000)} · 上次心跳 12 秒前</div>
+      </div>`;
+    });
+  }
+  if(today.length){
+    h+=`<div class="section-title">今日完成 / 失败 (${today.length})</div>`;
+    today.forEach(e=>{const v=DATA.versions.find(x=>x.id===e.versionId);const idea=DATA.ideas.find(x=>x.id===e.ideaId);
+      const mk=state.metricKey;const mv=e.metrics&&e.metrics[mk];
+      h+=`<div class="card" style="padding:var(--sp-4);margin-bottom:var(--sp-3);border-left:4px solid ${e.status==='failed'?'var(--danger-500)':'var(--neutral-200)'}">
+        <div style="font-size:var(--fs-xs);color:var(--neutral-500)">${idea.name} / ${v.name}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0">
+          <span style="font-size:var(--fs-md);font-weight:600;color:var(--neutral-800)">${e.id}</span>
+          <span style="display:flex;align-items:baseline;gap:6px">
+            <span class="mono" style="font-size:var(--fs-metric);font-weight:600;color:var(--neutral-900)">${fmtNum(mv)}</span>
+            <span class="mono" style="font-size:var(--fs-xs);color:var(--neutral-400)">${mk}</span>
+          </span>
+        </div>
+        ${e.status==='failed'?`<div style="font-size:var(--fs-sm);color:var(--danger-600)">Error: CUDA out of memory. Tried to allocate 2.00 GiB</div>`:''}
+        ${e.status==='done'&&mv==null?`<span class="chip warn">指标缺失</span>`:''}
+      </div>`;
+    });
+  }
+  if(unread.length){
+    h+=`<div class="section-title">Agent 新分析 (${unread.length})</div>`;
+    unread.forEach(e=>{const an=e.analysis;
+      h+=`<div class="card analysis-card" style="margin-bottom:var(--sp-3);border:1px solid var(--border)">
+        <div class="ac-head"><span class="source-badge src-agent">🤖 Agent 自动</span> · ${an.author} · ${fmtDate(an.createdAt)} <span class="badge badge-new" style="margin-left:auto">NEW</span></div>
+        <div class="ac-body" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${renderAnalysisText(an.text,e)}</div>
+      </div>`;
+    });
+  }
+  if(!running.length&&!today.length&&!unread.length)h+=`<div class="empty"><div class="ic">∅</div><div class="t">今天还没有动态</div><div>跑完实验后，结果会自动出现在这里</div></div>`;
+  h+=`</div>`;
+  return h;
+}
+
+/* ---------- 视图：文献库 ---------- */
+function viewLiterature(){
+  const all=DATA.literature.filter(p=>p.directions.includes(state.directionId));
+  const d=curDir();
+  const rows=all.map(p=>{
+    const tagChips=p.tags.slice(0,3).map(t=>`<span class="chip">${t}</span>`).join('')+ (p.tags.length>3?`<span class="chip">+${p.tags.length-3}</span>`:'');
+    const dbadge=p.derived?`<span class="badge badge-accent">Idea ${p.derived}</span>`:`<span class="badge badge-neutral">未衍生</span>`;
+    const dirChips=p.directions.map(id=>{const dd=DATA.directions.find(x=>x.id===id);return `<span class="chip ${id===state.directionId?'sel':''}" style="border-color:${dd.color}33">${dd.name===d.name?'本方向':dd.name}</span>`;}).join('');
+    const shared=p.directions.length>1?`<span class="badge badge-neutral" title="跨方向共用">共用</span>`:'';
+    return `<div class="lit-row" data-paper="${p.id}">
+      <div><div class="lit-title">${p.title}</div><div class="lit-meta">${p.authors.join(', ')} · ${p.year} · ${p.venue}</div></div>
+      <div style="display:flex;gap:4px">${tagChips}</div>
+      <div style="display:flex;gap:4px;align-items:center">${dirChips}${shared}</div>
+      <div><span class="read-dot ${p.read}"></span></div>
+    </div>`;
+  }).join('');
+  return `<div class="view">
+    <div class="page-title">文献库 <span style="font-size:var(--fs-sm);color:var(--neutral-400);font-weight:400">${all.length} 篇（${d.name}）</span></div>
+    <div class="toolbar">
+      <div class="search-box" style="width:240px">🔍 搜索标题 / 作者 / 笔记</div>
+      <span class="chip">复杂网络</span><span class="chip sel">影响力最大化 ✓</span><span class="chip">Transformer</span>
+      <div class="seg" style="margin-left:auto"><button class="on">本方向</button><button>含共用</button><button>仅独有</button></div>
+      <select class="styled"><option>最近添加</option><option>年份倒序</option><option>派生数</option></select>
+      <button class="btn btn-secondary">+ 从其它方向引用</button>
+    </div>
+    <div class="card">${rows||'<div class="empty"><div class="ic">📄</div><div class="t">本方向还没有文献</div><div>从其它方向引用共用文献，或导入新 PDF</div></div>'}</div>
+    <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">提示：标"共用"的文献同时属于多个方向；切换方向后此处自动过滤。</div>
+  </div>`;
+}
+
+/* ---------- 视图：Idea 树 ---------- */
+function viewIdeasTree(){
+  // 仅当前方向的 Idea；每个 Idea = 该方向仓库的一条 git branch
+  const nodes=ideasOfDir();
+  const svgW=900,svgH=560;
+  let paths='';
+  nodes.forEach(n=>{if(n.parentId){const p=nodes.find(x=>x.id===n.parentId);if(p){paths+=`<path d="M${p.x+200} ${p.y+36} C ${(p.x+n.x)/2+100} ${p.y+36}, ${(p.x+n.x)/2+100} ${n.y+36}, ${n.x} ${n.y+36}" fill="none" stroke="var(--neutral-300)" stroke-width="2"/>`;}}});
+  let nodeHtml=nodes.map(n=>{
+    const bm=n.bestMetric?`${n.versionCount} 版 · ${n.expCount} 实验 · 最佳 ${n.bestMetric.key} ${n.bestMetric.value}`:`${n.versionCount} 版 · ${n.expCount} 实验`;
+    return `<div class="idea-node ${n.status==='active'?'active':n.status}" data-idea="${n.id}" style="left:${n.x}px;top:${n.y}px">
+      <div class="left-bar"></div>
+      ${n.status==='validated'?'<span class="nd-check">✓</span>':''}
+      <div class="nd-title">${n.name}</div>
+      <div class="nd-meta">${bm}</div>
+      <div class="nd-meta" style="color:${n.status==='abandoned'?'var(--neutral-300)':'var(--accent-500)'}">⎇ ${n.gitBranch}</div>
+    </div>`;
+  }).join('');
+  const d=curDir();
+  return `<div class="view">
+    <div class="toolbar">
+      <div class="page-title" style="margin:0">Idea 分支树 <span style="font-size:var(--fs-sm);color:var(--neutral-400);font-weight:400">${d.name}</span></div>
+      <span class="chip info" style="margin-left:var(--sp-2)"><span style="font-family:var(--font-mono)">git</span> ${d.gitUrl}</span>
+      <div class="seg" style="margin-left:auto"><button>横</button><button class="on">纵</button></div>
+      <button class="btn btn-secondary">⊖</button><button class="btn btn-secondary">⊕</button><button class="btn btn-secondary">⤢ 适应</button>
+      <select class="styled"><option>全部状态</option><option>活跃</option><option>已验证</option><option>已放弃</option></select>
+      <button class="btn btn-primary">+ 新建 Idea（新分支）</button>
+    </div>
+    <div class="tree-canvas" id="tree-canvas">
+      <svg class="tree-svg" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none" style="width:${svgW}px;height:${svgH}px">${paths}</svg>
+      ${nodeHtml||'<div class="empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div><div class="ic">🌳</div><div class="t">这个方向还没有 Idea</div><div>从文献点『+ 衍生 Idea』，会自动开一条新 git 分支</div></div></div>'}
+    </div>
+    <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">每个 Idea 节点对应本方向仓库的一条 git 分支（⎇ 标注）；分支上的不同 commit = Version。已放弃的 Idea 分支保留记录、不删除。</div>
+  </div>`;
+}
+
+/* ---------- 视图：实验总览 / 矩阵 ---------- */
+function viewExperiments(){
+  // 默认 idea 取当前方向的第一个（若当前 ideaId 不属于本方向则重置）
+  const dirIdeas=ideasOfDir();
+  let idea=dirIdeas.find(x=>x.id===state.ideaId)||dirIdeas[0];
+  if(!idea){return `<div class="view"><div class="empty"><div class="ic">∅</div><div class="t">这个方向还没有 Idea</div><div>先到 Idea 分支树新建一个</div></div></div>`;}
+  state.ideaId=idea.id;
+  const versions=DATA.versions.filter(v=>v.ideaId===idea.id);
+  const exps=DATA.experiments.filter(e=>e.ideaId===idea.id);
+  // 指标选项：从 metrics 键并集动态生成
+  const metricKeys=unionKeys(exps.map(e=>e.metrics));
+  if(!metricKeys.includes(state.metricKey))state.metricKey=metricKeys[0]||'influence_spread';
+  // 分桶：按周
+  const weeks=[...new Set(exps.map(e=>isoWeek(e.created)))].sort();
+  const wkLabel=ts=>{const d=new Date(ts);return `${d.getMonth()+1}-${String(d.getDate()).padStart(2,'0')}`;};
+  // 计算 max 用于热力归一
+  const vals=exps.map(e=>e.metrics&&e.metrics[state.metricKey]).filter(v=>typeof v==='number');
+  const min=vals.length?Math.min(...vals):0,max=vals.length?Math.max(...vals):1;
+  // 聚合（max）
+  const cellOf=(vid,wk)=>{
+    const grp=exps.filter(e=>e.versionId===vid&&isoWeek(e.created)===wk);
+    if(!grp.length)return null;
+    const mv=grp.map(e=>e.metrics&&e.metrics[state.metricKey]).filter(v=>typeof v==='number');
+    const agg=mv.length?Math.max(...mv):null;
+    const done=grp.filter(e=>e.status==='done').length;
+    const failed=grp.filter(e=>e.status==='failed').length;
+    const running=grp.filter(e=>e.status==='running').length;
+    return{count:grp.length,agg,done,failed,running,exps:grp};
+  };
+  const metricOpts=metricKeys.map(k=>`<option ${k===state.metricKey?'selected':''}>${k}</option>`).join('');
+  if(state.view==='table')return viewTableView(idea,exps,metricKeys);
+  let rows=versions.map(v=>{
+    const best=DATA.experiments.filter(e=>e.versionId===v.id).map(e=>e.metrics&&e.metrics[state.metricKey]).filter(x=>typeof x==='number');
+    const bv=best.length?Math.max(...best).toFixed(3):'—';
+    let tds=weeks.map(wk=>{const c=cellOf(v.id,wk);if(!c)return `<td class="cell empty"></td>`;
+      const hc=c.agg!=null?heatColor(c.agg,min,max):null;
+      const bg=hc?hc[0]:'var(--neutral-50)';const fg=hc?hc[1]:'var(--neutral-800)';
+      const dark=hc&&['#5563EA','#333CA8'].includes(hc[0]);
+      const st=c.done?`<span style="color:var(--success-600)">✓${c.done}</span>`:'';
+      const fl=c.failed?`<span style="color:var(--danger-600)">✕${c.failed}</span>`:'';
+      const rn=c.running?`<span class="pulse-dot" style="display:inline-block;width:6px;height:6px;vertical-align:middle"></span>`:'';
+      const stk=c.done||c.failed||c.running?`<div class="stk"><span style="width:${c.done/c.count*100}%;background:var(--success-500)"></span><span style="width:${c.failed/c.count*100}%;background:var(--danger-500)"></span><span style="width:${c.running/c.count*100}%;background:var(--accent-600)"></span></div>`:'';
+      return `<td class="cell ${dark?'dark':''}" data-vid="${v.id}" data-wk="${wk}" style="background:${bg};color:${fg}"><div class="big">${c.count}</div><div class="topr">${st}${fl}${rn}</div>${stk}</td>`;
+    }).join('');
+    const stBar=v.status==='abandoned'?'<span class="badge badge-neutral">已归档</span>':'';
+    return `<tr><td class="row-hdr" style="${v.status==='abandoned'?'opacity:.5':''}">
+      <div style="display:flex;align-items:center;gap:4px"><span class="vname">${v.name}</span><span class="vhash">#${v.gitRef}</span>${stBar}</div>
+      <div class="vmeta">${DATA.experiments.filter(e=>e.versionId===v.id).length} 实验 · 最佳 ${bv}</div>
+    </td>${tds}</tr>`;
+  }).join('');
+  return `<div class="view">
+    <div class="toolbar">
+      <div class="page-title" style="margin:0">${idea.name} · 矩阵</div>
+      <span class="chip info" style="font-size:10px">⎇ ${idea.gitBranch}</span>
+      <div class="seg" style="margin-left:auto"><button data-vw="table">表格</button><button class="on" data-vw="matrix">矩阵</button><button id="go-diff">对比</button><button id="go-chart">图表</button></div>
+    </div>
+    <div class="toolbar">
+      指标<select class="styled" id="metric-sel">${metricOpts}</select>
+      聚合<select class="styled"><option>最大值</option><option>最小值</option><option>中位数</option><option>均值</option></select>
+      归一化<select class="styled"><option>全局</option><option>行内</option><option>对数</option></select>
+      分桶<select class="styled"><option>按天</option><option selected>按周</option><option>按月</option></select>
+      <span class="chip" style="cursor:pointer">+ 加条件</span>
+      <select class="styled"><option>状态：全部</option><option>仅完成</option><option>仅失败</option></select>
+      <div class="heat-legend" style="margin-left:auto"><span class="tnum">${min.toFixed(2)}</span><span class="heat-bar"></span><span class="tnum">${max.toFixed(3)}</span><span class="hatch" style="width:14px;height:14px;border-radius:3px;display:inline-block"></span> 缺失</div>
+    </div>
+    <div class="matrix-wrap"><table class="matrix"><thead><tr><th class="row-hdr" style="z-index:4">版本</th>${weeks.map(w=>`<th><div class="wk">${wkLabel(w)}</div><div class="cnt">${exps.filter(e=>isoWeek(e.created)===w).length} 次</div></th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-3)">点击单元格查看该批实验；Cmd+点击两个单元格对比。指标与列均从数据键集合动态生成。</div>
+  </div>`;
+}
+
+/* ---------- 视图：表格（可自定义列） ---------- */
+function viewTableView(idea,exps,metricKeys){
+  const pKeys=unionKeys(exps.map(e=>e.params));
+  const mKeys=unionKeys(exps.map(e=>e.metrics));
+  const fixedCols=[{k:'__id',label:'实验'},{k:'__status',label:'状态'},{k:'__created',label:'时间'}];
+  const userCols=state.tableCols.map(k=>({k,label:k}));
+  const cols=[...fixedCols,...userCols];
+  const rowsHtml=exps.map(e=>{
+    const tds=cols.map(c=>{
+      if(c.k==='__id')return `<td class="mono" style="font-size:var(--fs-sm)">${e.id}</td>`;
+      if(c.k==='__status')return `<td><span class="status-badge ${statusClass(e.status)}"><span class="dot"></span>${statusLabel(e.status,e.metrics)}</span></td>`;
+      if(c.k==='__created')return `<td class="tnum" style="font-size:var(--fs-xs);color:var(--neutral-500)">${fmtDate(e.created)}</td>`;
+      const v=e.params[c.k];const vm=e.metrics&&e.metrics[c.k];
+      const val=v!==undefined?v:(vm!==undefined?vm:undefined);
+      return `<td class="mono tnum">${fmtVal(val)}</td>`;
+    }).join('');
+    return `<tr style="cursor:pointer" data-exp="${e.id}">${tds}</tr>`;
+  }).join('');
+  const colPickerCols=[...pKeys,...mKeys];
+  return `<div class="view">
+    <div class="toolbar">
+      <div class="page-title" style="margin:0">${idea.name} · 表格</div>
+      <span class="chip info" style="font-size:10px">⎇ ${idea.gitBranch}</span>
+      <div class="seg" style="margin-left:auto"><button class="on" data-vw="table">表格</button><button data-vw="matrix">矩阵</button><button id="go-diff">对比</button><button id="go-chart">图表</button></div>
+    </div>
+    <div class="toolbar">
+      <span style="font-size:var(--fs-sm);color:var(--neutral-500)">共 ${exps.length} 个实验</span>
+      <button class="btn btn-secondary" id="col-picker">⚙ 自定义列 <span class="badge badge-accent" style="margin-left:4px">${state.tableCols.length}</span></button>
+      <span style="font-size:var(--fs-xs);color:var(--neutral-400)">默认列：实验 / 状态 / 时间</span>
+      <select class="styled" style="margin-left:auto" id="metric-sel">${metricKeys.map(k=>`<option ${k===state.metricKey?'selected':''}>${k}</option>`).join('')}</select>
+      <span class="chip" style="cursor:pointer">+ 加条件</span>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden"><table class="tbl"><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table></div>
+    <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">列来自实验 params/metrics 键并集，可任意勾选组合；不同方向、不同 Idea 的键集合不同，表格自适应。</div>
+  </div>`;
+}
+
+/* ---------- 视图：实验详情 ---------- */
+function viewExpDetail(){
+  const e=DATA.experiments.find(x=>x.id===state.expId)||DATA.experiments[0];
+  const v=DATA.versions.find(x=>x.id===e.versionId);
+  const idea=DATA.ideas.find(x=>x.id===e.ideaId);
+  const sameVersion=DATA.experiments.filter(x=>x.versionId===e.versionId);
+  // 找 baseline = 同版本第一个 done
+  const base=sameVersion.find(x=>x.status==='done'&&x.id!==e.id)||sameVersion[0];
+  // 主指标 pin：取 influence_spread 若有
+  const mk=state.metricKey;const mv=e.metrics?e.metrics[mk]:null;
+  const bv=base&&base.metrics?base.metrics[mk]:null;
+  let deltaHtml='—';
+  if(mv!=null&&bv!=null&&typeof mv==='number'&&typeof bv==='number'){const d=mv-bv;const pct=bv!==0?(d/bv*100):0;deltaHtml=`<span class="metric-delta neutral">${d>=0?'↑':'↓'} ${Math.abs(d).toFixed(3)} (${pct>=0?'+':''}${pct.toFixed(1)}%)</span>`;}
+  // params 面板（diff 模式 vs base）
+  const allKeys=unionKeys([e.params,base?base.params:{}].filter(Boolean));
+  const paramRows=allKeys.map(k=>{
+    const a=base?base.params[k]:undefined;const b=e.params[k];
+    if(JSON.stringify(a)===JSON.stringify(b))return `<tr class="same"><td class="kv-key">${typeIcon[valType(b)]||''} ${k}</td><td class="kv-val">${fmtVal(b)}</td></tr>`;
+    return `<tr class="changed"><td class="kv-key">${typeIcon[valType(b)]||''} ${k}</td><td class="kv-val">${fmtVal(b)} <span style="font-size:10px;color:var(--neutral-400)">← ${fmtVal(a)}</span></td></tr>`;
+  }).join('');
+  // 其余 metrics
+  const metricRows=Object.keys(e.metrics||{}).map(k=>`<tr><td class="kv-key">${k}</td><td class="kv-val">${fmtVal(e.metrics[k])}</td></tr>`).join('');
+  // 变体族卡（简化）
+  const family=computeFamily(sameVersion,e);
+  // 产物
+  const arts=(e.largeArtifacts||[]).map(a=>`<div style="display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) 0;border-bottom:1px solid var(--border-subtle)"><span style="font-size:14px">${a.type==='model'?'📦':'📝'}</span><span class="mono" style="font-size:var(--fs-sm)">${a.name}</span><span class="mono" style="font-size:var(--fs-xs);color:var(--neutral-400)">${a.path}</span><span class="chip warn">大产物</span><span style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-400)">${fmtSize(a.size)}</span></div>`).join('');
+  return `<div class="view">
+    <div class="exp-head">
+      <div><h1>${e.id}</h1><div class="meta-line">${idea.name} / ${v.name} · 创建 ${fmtDate(e.created)} · ${e.finishedAt?'完成 '+fmtDate(e.finishedAt):''} · ${e.runtimeS?'耗时 '+fmtDur(e.runtimeS):''}</div></div>
+      <span class="status-badge ${statusClass(e.status)}"><span class="dot"></span>${statusLabel(e.status,e.metrics)}</span>
+      <div style="margin-left:auto;display:flex;gap:var(--sp-2)"><button class="btn btn-secondary">复制参数新建</button><button class="btn btn-primary">让 agent 重新分析</button></div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="section-title">指标概览</div>
+        <div style="display:flex;gap:var(--sp-6);margin-bottom:var(--sp-4)">
+          <div class="metric-big"><span class="k">${mk}</span><span class="v">${fmtNum(mv)}</span><span class="d">vs baseline ${fmtNum(bv)}</span>${deltaHtml?`<div>${deltaHtml}</div>`:''}</div>
+        </div>
+        <div class="section-title">params <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-400);font-weight:400">与 ${base?base.id:'baseline'} 对比</span></div>
+        <div class="kv-panel"><table class="tbl"><tbody>${paramRows}</tbody></table></div>
+        <div class="section-title" style="margin-top:var(--sp-4)">其余指标</div>
+        <div class="kv-panel"><table class="tbl"><tbody>${metricRows||'<tr><td class="kv-key" style="color:var(--neutral-400)">无指标</td><td></td></tr>'}</tbody></table></div>
+        <div class="section-title" style="margin-top:var(--sp-4)">产物与日志</div>
+        <div class="card" style="padding:var(--sp-3)">${arts||'<div style="color:var(--neutral-400);font-size:var(--fs-sm)">无产物</div>'}</div>
+      </div>
+      <div>
+        <div class="section-title">Agent 分析</div>
+        ${e.analysis?`<div class="analysis-card"><div class="ac-head"><span class="source-badge ${e.analysis.source==='agent'?'src-agent':'src-human'}">${e.analysis.source==='agent'?'🤖 Agent 自动':'✍ 手动'}</span> · ${e.analysis.author||'你'} · ${fmtDate(e.analysis.createdAt)} ${e.analysis.read?'':'<span class="badge badge-new" style="margin-left:auto">NEW</span>'}</div><div class="ac-body">${renderAnalysisText(e.analysis.text,e)}</div><div style="margin-top:var(--sp-3);display:flex;gap:var(--sp-2)"><button class="btn btn-secondary">已采纳</button><button class="btn btn-ghost">查看历史版本</button></div></div>`:`<div class="empty" style="padding:var(--sp-8)"><div class="ic">📝</div><div class="t">还没有分析</div><div>让 agent 基于这次结果写一份复盘</div><button class="btn btn-primary" style="margin-top:var(--sp-3)">让 agent 写分析</button></div>`}
+        <div class="section-title" style="margin-top:var(--sp-4)">变体族</div>
+        <div class="card" style="padding:var(--sp-3)"><div style="font-size:var(--fs-sm);color:var(--neutral-600)">所属：${family.name}</div><div style="margin-top:var(--sp-2);display:flex;gap:4px;flex-wrap:wrap">${family.dims.map(d=>`<span class="chip">${d}</span>`).join('')||'<span class="chip">单一配置</span>'}</div><div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">族内 ${family.size} 个实验</div><button class="btn btn-secondary" style="margin-top:var(--sp-2)" id="go-family-diff">查看族内对比 →</button></div>
+      </div>
+    </div>
+  </div>`;
+}
+function fmtVal(v){if(v==null)return '<span style="color:var(--neutral-300)">—</span>';if(typeof v==='number')return v.toString();if(typeof v==='boolean')return v?'true':'false';return esc(v);}
+function statusClass(s){return {pending:'sb-pending',running:'sb-running',done:'sb-done',failed:'sb-failed'}[s]||'sb-pending';}
+function statusLabel(s,m){if(s==='done'&&(!m||!Object.keys(m).length))return '完成·缺指标';return {pending:'待运行',running:'运行中',done:'完成',failed:'失败'}[s];}
+
+// 渲染分析正文：把出现的 metric 键名变成 chip
+function renderAnalysisText(text,exp){
+  if(!exp.metrics)return esc(text).replace(/\n/g,'<br>');
+  const keys=Object.keys(exp.metrics);
+  let html=esc(text).replace(/\n/g,'<br>');
+  keys.sort((a,b)=>b.length-a.length).forEach(k=>{
+    const re=new RegExp(escapeReg(k),'g');
+    html=html.replace(re,`<span class="metric-chip" title="${k}=${fmtVal(exp.metrics[k])}">${k}</span>`);
+  });
+  return html;
+}
+function escapeReg(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+
+// 变体族聚类（§5.1 简化）
+function computeFamily(exps,curExp){
+  const repeatRe=/^(.*_)?(seed|random_seed|repeat|run_id|trial|idx)$/i;
+  const allKeys=unionKeys(exps.map(e=>e.params));
+  const dims=allKeys.filter(k=>{if(repeatRe.test(k))return false;const vs=new Set(exps.map(e=>e.params[k]).filter(v=>v!==undefined).map(String));return vs.size>=2;});
+  if(dims.length===0)return{name:'重复实验组',dims:[],size:exps.length};
+  if(dims.length<=3)return{name:`${curExp.versionId.replace('v_','')} · 变体族`,dims,size:exps.length};
+  return{name:'广域搜索',dims,size:exps.length};
+}
+
+/* ---------- 视图：Param Diff ---------- */
+function viewDiff(){
+  // 选中的两个实验
+  const sel=state.diffSel.length>=2?state.diffSel.slice(0,2):DATA.experiments.filter(e=>e.versionId===state.versionId&&e.status==='done').slice(0,2).map(e=>e.id);
+  if(sel.length<2)return `<div class="view"><div class="empty"><div class="ic">⇄</div><div class="t">选两个实验来对比</div></div></div>`;
+  const a=DATA.experiments.find(e=>e.id===sel[0])||DATA.experiments[0];
+  const b=DATA.experiments.find(e=>e.id===sel[1])||DATA.experiments[1];
+  const allKeys=unionKeys([a.params,b.params]);
+  const rows=allKeys.map(k=>{
+    const va=a.params[k],vb=b.params[k];
+    if(va===undefined)return `<tr class="only-r"><td class="kv-key col-key">${typeIcon[valType(vb)]||''} ${k}</td><td class="col-a">—</td><td class="col-b">${fmtVal(vb)}</td><td class="col-d"><span class="chip warn">仅右侧</span></td></tr>`;
+    if(vb===undefined)return `<tr class="only-l"><td class="kv-key col-key">${typeIcon[valType(va)]||''} ${k}</td><td class="col-a">${fmtVal(va)}</td><td class="col-b">—</td><td class="col-d"><span class="chip warn">仅左侧</span></td></tr>`;
+    if(JSON.stringify(va)===JSON.stringify(vb))return `<tr class="same"><td class="kv-key col-key">${typeIcon[valType(va)]||''} ${k}</td><td class="col-a">${fmtVal(va)}</td><td class="col-b">${fmtVal(vb)}</td><td class="col-d">=</td></tr>`;
+    let d='';
+    if(typeof va==='number'&&typeof vb==='number'){const dv=vb-va;const pct=va!==0?dv/va*100:0;d=`<span class="metric-delta neutral">${dv>=0?'↑':'↓'} ${Math.abs(dv).toFixed(4)} (${pct>=0?'+':''}${pct.toFixed(1)}%)</span>`;}
+    else d='<span class="metric-delta neutral">≠</span>';
+    return `<tr class="changed"><td class="kv-key col-key">${typeIcon[valType(vb)]||''} ${k}</td><td class="col-a">${fmtVal(va)}</td><td class="col-b">${fmtVal(vb)}</td><td class="col-d">${d}</td></tr>`;
+  }).join('');
+  // metrics diff
+  const mKeys=unionKeys([a.metrics,b.metrics]);
+  const mRows=mKeys.map(k=>{const va=a.metrics?a.metrics[k]:undefined;const vb=b.metrics?b.metrics[k]:undefined;
+    if(va===undefined||vb===undefined)return `<tr class="${va===undefined?'only-r':'only-l'}"><td class="kv-key col-key">${k}</td><td class="col-a">${fmtVal(va)}</td><td class="col-b">${fmtVal(vb)}</td><td class="col-d">—</td></tr>`;
+    if(va===vb)return `<tr class="same"><td class="kv-key col-key">${k}</td><td class="col-a">${fmtVal(va)}</td><td class="col-b">${fmtVal(vb)}</td><td class="col-d">=</td></tr>`;
+    const dv=typeof va==='number'&&typeof vb==='number'?vb-va:0;const pct=va!==0&&typeof va==='number'?dv/va*100:0;
+    return `<tr class="changed"><td class="kv-key col-key">${k}</td><td class="col-a">${fmtVal(va)}</td><td class="col-b">${fmtVal(vb)}</td><td class="col-d"><span class="metric-delta neutral">${typeof va==='number'?(dv>=0?'↑':'↓')+' '+Math.abs(dv).toFixed(3):'≠'}</span></td></tr>`;
+  }).join('');
+  const changed=rows.split('class="changed"').length-1;
+  return `<div class="view">
+    <div class="toolbar">
+      <div class="page-title" style="margin:0">参数对比</div>
+      <div style="margin-left:auto;display:flex;gap:var(--sp-2);align-items:center;font-size:var(--fs-sm)">
+        <select class="styled" id="diff-a">${diffOptions(a.id)}</select>
+        <button class="btn btn-secondary" id="diff-swap">⇄ 交换</button>
+        <select class="styled" id="diff-b">${diffOptions(b.id)}</select>
+      </div>
+    </div>
+    <div class="card" style="padding:var(--sp-3);margin-bottom:var(--sp-3);background:var(--neutral-50);border-radius:var(--r-md);font-size:var(--fs-sm);color:var(--neutral-600)">
+      本次差异：${changed} 个参数变化 · 其余 ${rows.split('class="same"').length-1} 项相同
+      <button class="btn btn-ghost" style="float:right">复制为 Markdown</button>
+    </div>
+    <div class="section-title">params</div>
+    <div class="card" style="padding:0;overflow:hidden"><table class="diff-tbl"><thead><tr><th class="col-key">键</th><th class="col-a">A (${a.id})</th><th class="col-b">B (${b.id})</th><th class="col-d">Δ</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="section-title" style="margin-top:var(--sp-4)">指标</div>
+    <div class="card" style="padding:0;overflow:hidden"><table class="diff-tbl"><thead><tr><th class="col-key">键</th><th class="col-a">A</th><th class="col-b">B</th><th class="col-d">Δ</th></tr></thead><tbody>${mRows||'<tr><td colspan="4" style="color:var(--neutral-400)">无指标</td></tr>'}</tbody></table></div>
+  </div>`;
+}
+function diffOptions(sel){return DATA.experiments.filter(e=>e.versionId===state.versionId).map(e=>`<option ${e.id===sel?'selected':''}>${e.id}</option>`).join('');}
+
+/* ---------- 视图：图表（LineScan，轴动态） ---------- */
+function viewChart(){
+  const exps=DATA.experiments.filter(e=>e.versionId===state.versionId&&e.status==='done'&&e.metrics);
+  const pKeys=unionKeys(exps.map(e=>e.params));
+  const mKeys=unionKeys(exps.map(e=>e.metrics));
+  const xKey=state.chartX||(pKeys.find(k=>isNumericKey(exps,k))||pKeys[0]);
+  const yKey=state.chartY||mKeys[0]||'influence_spread';
+  if(!pKeys.includes(xKey)&&!mKeys.includes(xKey))state.chartX=null;
+  if(!mKeys.includes(yKey))state.chartY=null;
+  const pts=exps.filter(e=>typeof e.params[xKey]==='number'&&typeof e.metrics[yKey]==='number').map(e=>({x:e.params[xKey],y:e.metrics[yKey],e}));
+  pts.sort((a,b)=>a.x-b.x);
+  const W=600,H=280,pad=40;
+  const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+  const xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys);
+  const sx=x=>pad+(xmax===xmin?W/2:(x-xmin)/(xmax-xmin)*(W-pad*2));
+  const sy=y=>H-pad-(ymax===ymin?H/2:(y-ymin)/(ymax-ymin)*(H-pad*2));
+  const path=pts.length?`M${pts.map(p=>sx(p.x)+','+sy(p.y)).join('L')}`:'';
+  const xOpts=[...pKeys,...mKeys].map(k=>`<option ${k===xKey?'selected':''}>${k}</option>`).join('');
+  const yOpts=mKeys.map(k=>`<option ${k===yKey?'selected':''}>${k}</option>`).join('');
+  const circles=pts.map((p,i)=>`<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="4" fill="var(--cat-2)" stroke="#fff" stroke-width="1"><title>${p.e.id}: ${p.x} → ${p.y}</title></circle>`).join('');
+  return `<div class="view">
+    <div class="toolbar"><div class="page-title" style="margin:0">图表</div>
+      <div class="seg" style="margin-left:auto"><button class="on">折线</button><button>热力图</button><button>平行坐标</button><button>表格</button></div>
+    </div>
+    <div class="toolbar axis-pick">X 轴<select class="styled" id="chart-x">${xOpts}</select> Y 轴<select class="styled" id="chart-y">${yOpts}</select></div>
+    <div class="chart-card"><svg viewBox="0 0 ${W} ${H}" style="height:var(--chart-h)">
+      <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="var(--neutral-300)"/>
+      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="var(--neutral-300)"/>
+      <text x="${pad}" y="${H-pad+16}" font-size="10" fill="var(--neutral-500)" font-family="var(--font-mono)">${xKey}</text>
+      <text x="${pad-4}" y="${pad-8}" font-size="10" fill="var(--neutral-500)" font-family="var(--font-mono)">${yKey}</text>
+      <text x="${pad}" y="${H-pad+28}" font-size="9" fill="var(--neutral-400)">${xmin}</text>
+      <text x="${W-pad-20}" y="${H-pad+28}" font-size="9" fill="var(--neutral-400)">${xmax}</text>
+      <path d="${path}" fill="none" stroke="var(--accent-600)" stroke-width="2"/>
+      ${circles}
+    </svg></div>
+    <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">X/Y 轴选项来自当前版本实验的 params/metrics 键并集，非数值键置灰。点 hover 看实验详情。</div>
+  </div>`;
+}
+
+/* ---------- 视图：Inbox ---------- */
+function viewInbox(){
+  return `<div class="view">
+    <div class="page-title">Agent 收件箱</div>
+    <div class="permission-bar">Agent 可以<b>创建实验记录、写入分析、提出提议</b>；<b>不会</b>执行代码、删除数据或修改已有实验结果。所有 agent 写入都带 🤖 来源徽章。</div>
+    <div class="seg" style="margin-bottom:var(--sp-4)"><button class="on">待批准提议 (2)</button><button>未读分析 (${DATA.experiments.filter(e=>e.analysis&&!e.analysis.read).length})</button></div>
+    <div class="proposal">
+      <div class="pr-head">🤖 Agent 自动 · 08-31 14:22 · 基于 exp-041、exp-043</div>
+      <div class="pr-title">建议：在 a3 上试 lr=0.005 + dropout=0.3 + hidden_dim=256</div>
+      <div class="pr-body">在 a3 上把 hidden_dim 从 128 提到 256 时 <span class="metric-chip" style="background:var(--accent-50);border:1px solid var(--accent-200);color:var(--accent-700);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:11px">influence_spread</span> 从 0.452 升到 0.466，但显存吃紧。建议插入 dropout=0.3 抑制过拟合，保留 256 配置。参考 exp-041 的 influence_spread=0.466。</div>
+      <div class="mini-diff">
+        <div class="md-row chg"><span class="kv-key">hidden_dim</span><span>128</span><span>256</span><span>↑</span></div>
+        <div class="md-row chg"><span class="kv-key">dropout</span><span>0.3</span><span>0.5</span><span>↑</span></div>
+        <div class="md-row" style="color:var(--neutral-400)"><span>其余 14 项与 exp-041 相同</span><span></span><span></span><span>▾</span></div>
+      </div>
+      <div style="font-size:var(--fs-xs);color:var(--neutral-500);margin-bottom:var(--sp-3)">目标版本：a3 (#c07e2a) · 预计运行 ~2 小时</div>
+      <div style="display:flex;gap:var(--sp-2)"><button class="btn btn-primary">批准并创建</button><button class="btn btn-secondary">修改参数</button><button class="btn btn-ghost">拒绝</button></div>
+    </div>
+    <div class="proposal">
+      <div class="pr-head">🤖 Agent 自动 · 08-31 11:08 · 基于 exp-025</div>
+      <div class="pr-title">建议：d2 用 SIR + layers=4 + beta=0.4 跑传播对比</div>
+      <div class="pr-body">d2 上 SIR 明显强于 IC。<span class="metric-chip" style="background:var(--accent-50);border:1px solid var(--accent-200);color:var(--accent-700);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:11px">infected_ratio</span> 在 layers=4、beta=0.4 下已达 0.58，建议把这套传播参数固定，回头验证主干模型。</div>
+      <div style="display:flex;gap:var(--sp-2)"><button class="btn btn-primary">批准并创建</button><button class="btn btn-ghost">拒绝</button></div>
+    </div>
+  </div>`;
+}
+
+/* ---------- 事件绑定 ---------- */
+function bindView(){
+  $$('.sb-item[data-route]').forEach(e=>e.onclick=()=>{state.route=e.dataset.route;if(state.route==='ideas')state.ideaId=ideasOfDir()[0]&&ideasOfDir()[0].id;render();});
+  $$('[data-jump-idea]').forEach(e=>e.onclick=()=>{state.ideaId=e.dataset.jumpIdea;state.route='experiments';render();});
+  $('#d-compact').onclick=()=>{state.density='compact';$('#app').dataset.density='compact';$('#d-compact').classList.add('on');$('#d-comfort').classList.remove('on');};
+  $('#d-comfort').onclick=()=>{state.density='comfortable';$('#app').dataset.density='comfortable';$('#d-comfort').classList.add('on');$('#d-compact').classList.remove('on');};
+  // 研究方向切换
+  $('#dir-switch').onclick=(ev)=>{ev.stopPropagation();const m=$('#dir-menu');m.style.display=m.style.display==='block'?'none':'block';};
+  $$('.dir-opt').forEach(o=>o.onclick=(ev)=>{ev.stopPropagation();state.directionId=o.dataset.dir;const f=ideasOfDir()[0];state.ideaId=f?f.id:null;state.view='matrix';$('#dir-menu').style.display='none';render();});
+  // 视图模式切换（表格/矩阵）
+  $$('[data-vw]').forEach(b=>b.onclick=()=>{state.view=b.dataset.vw;render();});
+  // 路由内交互
+  if(state.route==='literature')$$('.lit-row').forEach(r=>r.onclick=()=>toast('打开文献：'+r.dataset.paper));
+  if(state.route==='ideas')$$('.idea-node').forEach(n=>n.onclick=()=>{state.ideaId=n.dataset.idea;state.route='experiments';state.view='matrix';render();});
+  if(state.route==='experiments'){
+    const ms=$('#metric-sel');if(ms)ms.onchange=()=>{state.metricKey=ms.value;render();};
+    $$('.matrix .cell:not(.empty)').forEach(c=>c.onclick=()=>openDrillDown(c.dataset.vid,c.dataset.wk));
+    const gd=$('#go-diff');if(gd)gd.onclick=()=>{state.route='diff';render();};
+    const gc=$('#go-chart');if(gc)gc.onclick=()=>{state.route='chart';render();};
+    const cp=$('#col-picker');if(cp)cp.onclick=openColPicker;
+    $$('#content table [data-exp]').forEach(r=>r.onclick=()=>{state.expId=r.dataset.exp;state.route='exp-detail';render();});
+  }
+  if(state.route==='exp-detail'){
+    $$('[data-go]').forEach(b=>b.onclick=()=>{const t=b.dataset.go;if(t==='ideas'){state.route='ideas';render();}});
+  }
+  if(state.route==='diff'){
+    const da=$('#diff-a'),db=$('#diff-b');if(da)da.onchange=()=>{state.diffSel=[da.value,($('#diff-b').value)];render();};if(db)db.onchange=()=>{state.diffSel=[$('#diff-a').value,db.value];render();};
+    const sw=$('#diff-swap');if(sw)sw.onclick=()=>{state.diffSel.reverse();render();};
+  }
+  if(state.route==='chart'){
+    const cx=$('#chart-x'),cy=$('#chart-y');
+    if(cx)cx.onchange=()=>{state.chartX=cx.value;render();};
+    if(cy)cy.onchange=()=>{state.chartY=cy.value;render();};
+  }
+}
+
+function openDrillDown(vid,wk){
+  const grp=DATA.experiments.filter(e=>e.versionId===vid&&isoWeek(e.created)===Number(wk));
+  const v=DATA.versions.find(x=>x.id===vid);
+  const rows=grp.map(e=>{const idea=DATA.ideas.find(x=>x.id===e.ideaId);const mv=e.metrics&&e.metrics[state.metricKey];
+    return `<tr style="cursor:pointer" data-exp="${e.id}"><td class="mono" style="font-size:var(--fs-sm)">${e.id}</td><td><span class="status-badge ${statusClass(e.status)}"><span class="dot"></span>${statusLabel(e.status,e.metrics)}</span></td><td class="mono tnum">${fmtNum(mv)}</td><td style="font-size:var(--fs-xs);color:var(--neutral-400)">${fmtDate(e.created)}</td></tr>`;
+  }).join('');
+  openDrawer(`${v?v.name:''} · ${fmtDate(Number(wk))} ~ ${fmtDate(Number(wk)+6*86400000)}`,`
+    <div style="font-size:var(--fs-sm);color:var(--neutral-500);margin-bottom:var(--sp-3)">该批次共 ${grp.length} 个实验，点击查看详情</div>
+    <table class="tbl"><thead><tr><th>实验</th><th>状态</th><th>${state.metricKey}</th><th>时间</th></tr></thead><tbody>${rows}</tbody></table>
+    <button class="btn btn-secondary" style="margin-top:var(--sp-3)">在新页打开完整列表</button>`);
+  $$('#drawer-body [data-exp]').forEach(r=>r.onclick=()=>{state.expId=r.dataset.exp;state.route='exp-detail';closeDrawer();render();});
+}
+
+function openDrawer(title,body){
+  $('#drawer-title').textContent=title;$('#drawer-body').innerHTML=body;
+  $('#drawer').classList.add('open');$('#drawer-overlay').classList.add('open');
+}
+function closeDrawer(){$('#drawer').classList.remove('open');$('#drawer-overlay').classList.remove('open');}
+$('#drawer-close').onclick=closeDrawer;
+$('#drawer-overlay').onclick=closeDrawer;
+
+// 自定义列抽屉：勾选任意 param/metric 键作为表格列
+function openColPicker(){
+  const idea=DATA.ideas.find(n=>n.id===state.ideaId);
+  const exps=DATA.experiments.filter(e=>e.ideaId===state.ideaId);
+  const pKeys=unionKeys(exps.map(e=>e.params));
+  const mKeys=unionKeys(exps.map(e=>e.metrics));
+  const checked=new Set(state.tableCols);
+  const group=(title,keys)=>`<div style="margin-bottom:var(--sp-3)"><div style="font-size:var(--fs-xs);color:var(--neutral-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;font-weight:600">${title}</div>${keys.map(k=>`<label style="display:flex;align-items:center;gap:6px;padding:4px 0;cursor:pointer;font-size:var(--fs-sm)"><input type="checkbox" data-col="${k}" ${checked.has(k)?'checked':''} style="accent-color:var(--accent-600)"><span class="mono">${k}</span><span style="font-size:10px;color:var(--neutral-400);margin-left:auto">${exps.filter(e=>(e.params&&k in e.params)||(e.metrics&&k in e.metrics)).length} 次出现</span></label>`).join('')}</div>`;
+  const body=`<div style="font-size:var(--fs-sm);color:var(--neutral-500);margin-bottom:var(--sp-3)">勾选要作为表格列的键。固定列（实验/状态/时间）始终显示。</div>
+    ${group('params',pKeys)}${group('metrics',mKeys)}
+    <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-3)"><button class="btn btn-primary" id="col-apply">应用</button><button class="btn btn-ghost" id="col-clear">清空自定义</button></div>`;
+  openDrawer('自定义列 · '+ (idea?idea.name:''),body);
+  $('#col-apply').onclick=()=>{state.tableCols=$$('#drawer-body [data-col]').filter(c=>c.checked).map(c=>c.dataset.col);closeDrawer();render();toast('已更新 '+state.tableCols.length+' 个自定义列');};
+  $('#col-clear').onclick=()=>{state.tableCols=[];closeDrawer();render();};
+}
+
+function toast(msg){const t=el('div','toast',msg);$('#toast-wrap').appendChild(t);setTimeout(()=>t.remove(),5000);}
+
+// 路由初始化
+window.addEventListener('hashchange',()=>{const h=location.hash.slice(1);if(h)state.route=h;render();});
+document.addEventListener('click',()=>{$('#dir-menu').style.display='none';});
+// 初始
+if(location.hash.slice(1))state.route=location.hash.slice(1);
+render();
+// 欢迎提示
+setTimeout(()=>toast('Idea Forge 原型已加载。侧栏顶部切换研究方向，左侧导航切换视图。'),500);
+</script>
+</body>
+</html>
