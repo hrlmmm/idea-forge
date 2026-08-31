@@ -88,11 +88,12 @@ async def main() -> None:
             }, "记录版本")
             vid = ver["version_id"]
 
-            # 5. 实验网格：lr × dropout
+            # 5. 实验网格：lr × dropout（带 description 一句话说明）
             exps = []
             for lr, dp in [(0.0005, 0.0), (0.001, 0.1), (0.005, 0.1), (0.005, 0.3)]:
                 e = await call("create_experiment", {
                     "version_id": vid, "name": f"lr{lr}-dp{dp}",
+                    "description": f"扫描 lr={lr}、dropout={dp} 对种子集质量的影响（baseline: DeepIS）",
                     "params": {"lr": lr, "dropout": dp, "hidden_dim": 128,
                                "num_layers": 2, "seed": 1},
                 }, f"新建实验 lr={lr} dropout={dp}")
