@@ -563,3 +563,32 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 - 🟠 kv 表 `value_num` 类型归一化（§5 已改）；事件 seq 存 index.db（易失，rebuild 后 `since=0` 全量拉取兜底，§5 已加 `events` 表）。
 - 🟠 `derivedIdeaIds` 一致性：以 `idea_papers` 索引为权威，Storage 单一写路径维护（§6 已改）。
 - 🟠 里程碑调整：M2/M3 之间冻结 results 协议；Watcher 闭环（原 M7）提前到 M4 之后先行验证（§15 已改）。
+
+---
+
+## 18. 代码放置与运行约定（v0.1 实测验证，2026-08-31）
+
+平台**不执行代码**，但需要明确"科研代码放哪、怎么运行、怎么回写"，否则实验无法复现。约定如下（已在 `scripts/agent_demo.py` 与多层网络影响力最大化方向实测走通）：
+
+### 代码放置
+```
+<方向工作目录>/                      # = 该方向的一个 git 仓库
+├─ .research/                        # 平台元数据（gitignore，不随代码走）
+└─ code/<idea-slug>/                 # 每个 Idea 的代码，独立目录（对应它的 git 分支）
+   ├─ train.py                       # 训练入口（约定文件名）
+   └─ …其它代码
+```
+- `idea-slug` = Idea 名转小写短名（如 `DeepIS-Attn` → `deepis-attn`）；一个 Idea 分叉出新 Idea 时，新分支代码放自己的 `code/<slug>/`。
+- v0.1 用物理目录组织（每 Idea 独立目录），git 分支映射为 v0.2 增强（`create_idea` 真建分支后，目录 ↔ 分支一一对应）。
+
+### 运行与回写协议（关键）
+1. agent 建实验：`create_experiment(version_id, params, name, description)` → 得 `exp_id` + `suggested_command`。
+2. agent 本地运行：`python code/<idea-slug>/train.py --exp <exp_id>`。
+3. **train.py 约定**：
+   - 从 `.research/experiments/<exp_id>/config.json` 读 `params`（参数配置随实验保存）；
+   - 跑完后把 **`{metrics, metricSchema}`** 写进同目录 `results.json`（**只含 metrics**，params 归 config.json，协议冻结）；
+   - 可读 `--sleep` 等 mock 参数。
+4. 回收双保险：agent 显式 `update_experiment_status(done)` + `set_metrics`；或 `ideaforge watch`（15s 扫 `results.json` sentinel 自动 done）。
+5. agent 复盘：`write_analysis`（references 引用实际 metric 键名）→ `propose_experiment` 提下一实验，人等批准。
+
+**复现闭环**：一个实验 = 代码（`code/<slug>/` + commit `gitRef`） + 参数（config.json） + 描述（description） + 结果（results.json）四要素齐备。

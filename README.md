@@ -100,6 +100,15 @@ python scripts/agent_demo.py     # 自动建方向→文献→Idea→版本→�
 - 实验四文件：`meta.json`（状态机，权威，含 `description` 一句话说明 + `gitRef` 代码 commit，**创建时默认继承 Version 的 commit**）· `config.json`（params 参数配置）· `results.json`（metrics，协议冻结：只含 metrics+metricSchema）· `status.json`（审计日志）。
 - 每次实验 = 哪份代码（commit）+ 什么参数（config.json）+ 什么结果（results.json）+ 想验证什么（description），四者齐备可完全复现。
 
+**代码放哪、怎么跑**（平台不执行代码，代码属于你的科研仓库）：
+
+```
+<方向工作目录>/                  # = 该方向的一个 git 仓库
+└─ code/<idea-slug>/train.py     # 每个 Idea 的代码独立目录（对应它的 git 分支）
+```
+
+运行约定：`python code/<idea-slug>/train.py --exp <exp_id>` —— 脚本读该实验的 `config.json`（params），跑完把 `{metrics}` 写回 `results.json`，Watcher 或 agent 自动回收为 done。完整约定见 `docs/technical-plan.md` §18。
+
 ## 测试
 
 ```bash
