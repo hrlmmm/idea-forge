@@ -67,36 +67,63 @@ def _alpha_name(seq: int) -> str:
 
 def create_direction(name: str, repo_path: str | Path, git_remote: str | None = None) -> dict:
     dr = DataRoot()
+    rp = str(repo_path)
+    rp_norm = _norm_path(rp)
+    # 同一 (name, root_path) 复用现有方向，防止重跑脚本叠加脏数据
+    reg = read_json(dr.directions_file, {}) or {}
+    for did, entry in reg.items():
+        if entry.get("deletedAt"):
+            continue
+        if (entry.get("name") == name
+                and _norm_path(entry.get("root_path") or "") == rp_norm):
+            return {"direction_id": did, "name": entry["name"],
+                    "repo_path": entry["root_path"],
+                    "createdAt": entry.get("createdAt"), "reused": True}
     did = domain.new_id("dir")
     now = domain.utc_now()
     cfg = {
         "schemaVersion": SCHEMA_VERSION,
         "id": did,
         "name": name,
-        "repoPath": str(repo_path),
+        "repoPath": rp,
         "gitRemote": git_remote,
         "createdAt": now,
         "defaultParams": [],
         "defaultMetrics": [],
         "metricDeclarations": {},
     }
-    layout = DirectionLayout(repo_path)
+    layout = DirectionLayout(rp)
     layout.init(cfg)
     dr.register_direction({
-        "id": did, "name": name, "root_path": str(repo_path),
+        "id": did, "name": name, "root_path": rp,
         "git_remote": git_remote, "createdAt": now,
     })
-    return {"direction_id": did, "name": name, "repo_path": str(repo_path), "createdAt": now}
+    return {"direction_id": did, "name": name, "root_path": rp, "createdAt": now}
+
+
+def _norm_path(p: str | Path) -> str:
+    """统一路径字符串（正反斜杠 → posix 风格），用于方向 root_path 比较/去重。
+
+    Windows 下 `D:\\foo` 和 `D:/foo` 字符串不等但指向同目录，必须规范化后再比较。
+    """
+    return Path(p).as_posix()
 
 
 def list_directions(include_archived: bool = False) -> list[dict]:
+    """按 root_path 去重（保留最新创建的方向），避免多方向共享 .research 导致 list_ideas 重复。"""
     dr = DataRoot()
     reg = read_json(dr.directions_file, {}) or {}
-    out = []
+    by_root: dict[str, str] = {}   # posix 规范化路径 → did
     for did, entry in reg.items():
         if not include_archived and entry.get("deletedAt"):
             continue
-        out.append({"id": did, **entry})
+        rp_norm = _norm_path(entry.get("root_path") or "")
+        cur = by_root.get(rp_norm)
+        if cur is None or (entry.get("createdAt") or "") > (reg[cur].get("createdAt") or ""):
+            by_root[rp_norm] = did
+    out = []
+    for did in by_root.values():
+        out.append({"id": did, **reg[did]})
     return out
 
 
