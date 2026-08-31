@@ -186,8 +186,9 @@ function vExperiments() {
     const list = ve.map((e) => `
       <tr style="cursor:pointer" data-open-exp="${e.id}">
         <td class="mono" style="font-size:var(--fs-sm)">${esc(e.id)}</td>
-        <td>${esc(e.name)}</td>
+        <td>${esc(e.name)}${e.description ? `<div style="font-size:var(--fs-xs);color:var(--neutral-500);margin-top:2px">${esc(e.description)}</div>` : ""}</td>
         <td><span class="status-badge ${e.status === "done" ? "sb-done" : e.status === "failed" ? "sb-failed" : e.status === "running" ? "sb-running" : "sb-pending"}"><span class="dot"></span>${e.status === "done" ? "完成" : e.status === "failed" ? "失败" : e.status === "running" ? "运行中" : "待运行"}</span></td>
+        <td class="mono" style="font-size:var(--fs-xs);color:var(--accent-500)">#${esc(e.git_ref || v.git_ref || "")}</td>
         <td style="font-size:var(--fs-xs);color:var(--neutral-400)">${fmtDate(e.created_at)}</td>
       </tr>`).join("");
     return `<div class="card" style="margin-bottom:var(--sp-3)">
@@ -196,7 +197,7 @@ function vExperiments() {
         <span class="mono" style="font-size:10px;color:var(--neutral-400)">#${esc(v.git_ref || "")}</span>
         <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-500)">${ve.length} 个实验</span>
       </div>
-      <table class="tbl"><thead><tr><th>实验</th><th>名称</th><th>状态</th><th>创建</th></tr></thead><tbody>${list || `<tr><td colspan="4" style="color:var(--neutral-400)">还没有实验</td></tr>`}</tbody></table>
+      <table class="tbl"><thead><tr><th>实验</th><th>名称</th><th>状态</th><th>代码 commit</th><th>创建</th></tr></thead><tbody>${list || `<tr><td colspan="5" style="color:var(--neutral-400)">还没有实验</td></tr>`}</tbody></table>
     </div>`;
   }).join("");
   const switchIdeas = state.ideas.map((i) => `<button class="${i.id === idea.id ? "on" : ""}" data-idea-sel="${i.id}">${esc(i.name)}</button>`).join("");
@@ -214,7 +215,10 @@ function vExpDetail() {
   if (!e) return `<div class="view"><div class="empty"><div class="ic">∅</div><div class="t">实验不存在</div></div></div>`;
   let h = `<div class="view">
     <div class="exp-head">
-      <div><h1>${esc(e.name)}</h1><div class="meta-line">${esc(e.id)} · 创建 ${fmtDate(e.created_at)} · ${e.finished_at ? "完成 " + fmtDate(e.finished_at) : ""}</div></div>
+      <div><h1>${esc(e.name)}</h1>
+        ${e.description ? `<div style="font-size:var(--fs-sm);color:var(--neutral-600);margin-top:2px">${esc(e.description)}</div>` : ""}
+        <div class="meta-line">${esc(e.id)} · 代码 <span class="mono" style="color:var(--accent-500)">#${esc(e.git_ref || "")}</span> · 创建 ${fmtDate(e.created_at)} · ${e.finished_at ? "完成 " + fmtDate(e.finished_at) : ""}</div>
+      </div>
       <span class="status-badge ${e.status === "done" ? (e.warning ? "sb-warn" : "sb-done") : e.status === "failed" ? "sb-failed" : e.status === "running" ? "sb-running" : "sb-pending"}"><span class="dot"></span>${e.status === "done" ? (e.warning ? "完成·缺指标" : "完成") : e.status === "failed" ? "失败" : e.status === "running" ? "运行中" : "待运行"}</span>
     </div>
     <div id="exp-detail-body" style="color:var(--neutral-500)">加载详情…</div>

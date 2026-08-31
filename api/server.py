@@ -55,6 +55,7 @@ class ExperimentIn(BaseModel):
     version_id: str
     params: dict[str, Any] = {}
     name: str | None = None
+    description: str | None = None
 
 
 class StatusIn(BaseModel):
@@ -188,7 +189,7 @@ def api_list_experiments(direction_id: str | None = None, idea_id: str | None = 
 def api_create_experiment(body: ExperimentIn):
     try:
         return service.create_experiment(body.version_id, body.params, body.name,
-                                         created_by="human")
+                                         body.description, created_by="human")
     except Exception as e:
         raise _err(e)
 

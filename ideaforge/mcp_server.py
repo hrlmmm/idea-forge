@@ -196,16 +196,23 @@ def list_versions(idea_id: str | None = None, limit: int = 100) -> dict:
 
 @mcp.tool()
 def create_experiment(version_id: str, params: dict[str, Any], name: str | None = None,
+                      description: str | None = None,
                       metric_schema: list[dict] | None = None,
                       status: str = "pending") -> dict:
-    """新建实验（params 键值透传）。返回建议运行命令与结果文件约定。"""
-    meta = service.create_experiment(version_id, params, name,
+    """新建实验（params 键值透传）。返回建议运行命令与结果文件约定。
+
+    description：一句话说明这次实验想验证什么（agent 应尽量生成）；
+    git commit 默认继承该 Version 的 commit（代码关联）。
+    """
+    meta = service.create_experiment(version_id, params, name, description,
                                      created_by="agent")
     layout = _locate_exp(meta["id"])
     results_file = str(layout.exp_results(meta["id"]))
     return _data({
         "experiment_id": meta["id"], "name": meta["name"],
+        "description": meta.get("description") or "",
         "version_id": version_id, "status": meta["status"], "params": params,
+        "git_ref": meta.get("gitRef"),
         "metric_schema": metric_schema or [],
         "suggested_command": (
             f"python train.py && python -m ideaforge.cli finalize "

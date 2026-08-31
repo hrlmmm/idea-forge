@@ -268,19 +268,24 @@ def list_versions(idea_id: str | None = None, include_archived: bool = False) ->
 # ---------------------------------------------------------------- Experiment（params 键值，字段不写死）
 
 def create_experiment(version_id: str, params: dict[str, Any] | None = None,
-                      name: str | None = None, created_by: str = "agent",
-                      git_ref: str | None = None) -> dict:
+                      name: str | None = None, description: str | None = None,
+                      created_by: str = "agent", git_ref: str | None = None) -> dict:
     layout = _find_version_root(version_id)
     # 实验 id 用全局计数器（跨方向唯一），避免 _find_exp_root 跨方向歧义
     cs = CounterStore(DataRoot().counters)
     seq = cs.bump("exp_seq")
     eid = f"exp-{seq:03d}"
     now = domain.utc_now()
+    # 默认继承 Version 的 commit（代码关联）：实验必须能追溯到它跑的是哪份代码
+    if not git_ref:
+        vm = read_json(layout.version_meta(version_id)) or {}
+        git_ref = vm.get("gitRef") or vm.get("fullGitRef")
     meta = {
         "schemaVersion": SCHEMA_VERSION,
         "id": eid,
         "versionId": version_id,
         "name": name or f"run-{seq:03d}",
+        "description": description or "",
         "status": domain.STATUS_PENDING,
         "createdAt": now,
         "finishedAt": None,
@@ -291,7 +296,7 @@ def create_experiment(version_id: str, params: dict[str, Any] | None = None,
         "warning": False,
     }
     atomic_write_json(layout.exp_meta(eid), meta)
-    atomic_write_json(layout.exp_config(eid), params or {})   # params 归 config.json
+    atomic_write_json(layout.exp_config(eid), params or {})   # params 归 config.json（参数配置随实验保存）
     atomic_write_json(layout.exp_status(eid), {
         "state": domain.STATUS_PENDING,
         "history": [{"state": domain.STATUS_PENDING, "at": now, "by": created_by}],

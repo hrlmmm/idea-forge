@@ -210,6 +210,7 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
   "id": "exp-048",
   "versionId": "v-a3f1e2d4",
   "name": "lr=0.005 dropout=0.3",
+  "description": "验证 lr 提升对 influence_spread 的影响",
   "status": "pending",
   "createdAt": "2026-08-31T10:00:00Z",
   "finishedAt": null,
@@ -223,7 +224,9 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
 
 | 字段 | 何时写 |
 |---|---|
+| `description` | 创建时由 agent/人给一句话说明（**推荐必填**；这是"每次实验想验证什么"的通用记录） |
 | `status` | `pending`（创建）→ `running`（agent 标开始）→ `done \| failed`（终态，不可逆） |
+| `gitRef` | **创建时默认继承该 Version 的 commit**（代码关联：实验必须可追溯到它跑的是哪份代码）；可显式覆盖 |
 | `finishedAt` / `runtimeS` | **仅终态写**，其余时刻为 null |
 | `heartbeatAt` | running 期间由 Watcher 心跳更新（UI"上次心跳"文案的数据源） |
 | `warning` | 终态 `done` 但 metrics 为空时置 true（UI 降级为"完成·缺指标"） |

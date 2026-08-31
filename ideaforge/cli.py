@@ -103,6 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     ec.add_argument("version_id")
     ec.add_argument("--params", default="{}", help="JSON 字符串，如 '{\"lr\":0.005,\"dropout\":0.3}'")
     ec.add_argument("--name", default=None)
+    ec.add_argument("--description", default=None)
     ec.add_argument("--created-by", default="agent")
     el = esub.add_parser("list")
     _add_common(el)
@@ -203,7 +204,8 @@ def _dispatch(p: argparse.ArgumentParser, args) -> None:
     elif cmd == "exp":
         if sub == "create":
             params = json.loads(args.params)
-            _emit(service.create_experiment(args.version_id, params, args.name, args.created_by))
+            _emit(service.create_experiment(args.version_id, params, args.name,
+                                            args.description, args.created_by))
         elif sub == "list":
             _emit(service.list_experiments(args.direction, args.idea, args.version, args.status))
         elif sub == "get":

@@ -97,7 +97,8 @@ python scripts/agent_demo.py     # 自动建方向→文献→Idea→版本→�
 
 - **磁盘 JSON 是唯一真相**，SQLite 索引只是缓存，`ideaforge index rebuild` 可随时重建。
 - params/metrics 是纯键值，平台不预设任何字段名，适用于任何研究方向。
-- 实验四文件：`meta.json`（状态机，权威）· `config.json`（params）· `results.json`（metrics，协议冻结：只含 metrics+metricSchema）· `status.json`（审计日志）。
+- 实验四文件：`meta.json`（状态机，权威，含 `description` 一句话说明 + `gitRef` 代码 commit，**创建时默认继承 Version 的 commit**）· `config.json`（params 参数配置）· `results.json`（metrics，协议冻结：只含 metrics+metricSchema）· `status.json`（审计日志）。
+- 每次实验 = 哪份代码（commit）+ 什么参数（config.json）+ 什么结果（results.json）+ 想验证什么（description），四者齐备可完全复现。
 
 ## 测试
 

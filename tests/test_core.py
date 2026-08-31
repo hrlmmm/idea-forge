@@ -113,6 +113,20 @@ def test_counter_increments(tmp_path):
     assert e2["id"] > e1["id"]
 
 
+def test_experiment_description_and_code_link(tmp_path):
+    """实验应带一句话描述，且默认继承 Version 的 commit（代码关联）。"""
+    repo = _setup(tmp_path)
+    d = service.create_direction("IM", repo)
+    idea = service.create_idea(d["direction_id"], "主干")
+    ver = service.create_version(idea["id"], commit="abc12345")
+    exp = service.create_experiment(ver["id"], {"lr": 0.005, "dropout": 0.3},
+                                    name="lr005", description="验证 lr 提升对 spread 的影响")
+    got = service.get_experiment(exp["id"])
+    assert got["description"] == "验证 lr 提升对 spread 的影响"
+    assert got["gitRef"] == "abc12345"         # 继承 version 的 commit 短 hash（8 位）
+    assert got["params"] == {"lr": 0.005, "dropout": 0.3}
+
+
 def test_soft_delete_and_restore(tmp_path):
     """受限软删除：置 deletedAt 后查询默认过滤，restore 后可见。"""
     repo = _setup(tmp_path)
