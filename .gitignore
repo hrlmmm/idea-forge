@@ -28,3 +28,4 @@ data/
 # Secrets
 .env
 *.key
+design/tmp/
