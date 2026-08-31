@@ -70,7 +70,7 @@ export IDEAFORGE_HOME=D:/ideaforge-home      # Windows 示例，D 盘
 }
 ```
 
-连上后 agent 获得 **25 个工具**（7 类）：Direction / Literature / Idea / Version / Experiment / Analysis / 查询自省。核心流程：
+连上后 agent 获得 **26 个工具**（7 类）：Direction / Literature / Idea / Version / Experiment / Analysis / 查询自省。核心流程：
 
 ```
 create_direction → add_paper → create_idea(新分支) → create_version(commit)
@@ -79,7 +79,7 @@ create_direction → add_paper → create_idea(新分支) → create_version(com
   → write_analysis → propose_experiment(人等批准)
 ```
 
-> agent 只会创建记录、写分析、提提议；**不会**执行代码、删除数据、覆盖已有结果。
+> agent 只会创建记录、写分析、提提议、**受限软删除**（`mark_deleted`，置 `deletedAt` 可恢复）；**不会**执行代码、硬删除数据、覆盖已有结果。名称（方向/Idea/实验 name）由 agent 起，**ID 一律平台生成**（实验 `exp-NNN` 全局唯一）。
 
 **完整的 agent 工作流示例**（活代码）：`scripts/agent_demo.py`
 

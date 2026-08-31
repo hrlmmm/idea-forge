@@ -432,8 +432,8 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 
 - **只读（10 个）**：`list_directions` `search_papers` `list_ideas` `list_versions` `list_experiments` `get_experiment` `get_analyses` `global_search` `get_key_set` `list_proposals`
 - **只写新建 / append-only（9 个）**：`create_direction` `add_paper` `create_idea` `branch_idea` `create_version` `create_experiment` `write_analysis` `propose_experiment` `set_metrics`（覆盖同键时保留 `metric_history` 快照）
-- **受限变更（6 个）**：`switch_direction`（上下文）`update_paper`（**白名单字段**）`update_idea_status` `update_experiment_status`（终态 done/failed 不可逆迁移，纠错需 `force:true` 仅 UI 可用）`mark_read` `link_paper_to_idea`——**全部支持 `expected_updated_at` 乐观锁**
-- **MCP 面不存在**：任何 `delete_*` 工具、执行代码、修改已有实验结果。删除/软归档仅走 REST（UI 上由人操作）。所有 agent 写入带 `source:"agent"`，供 UI SourceBadge 渲染。
+- **受限变更（7 个）**：`switch_direction`（上下文）`update_paper`（**白名单字段**）`update_idea_status` `update_experiment_status`（终态 done/failed 不可逆迁移，纠错需 `force:true` 仅 UI 可用）`mark_read` `link_paper_to_idea` `mark_deleted`（**受限软删除**：置 `deletedAt`，数据保留可 restore，物理清理只留 UI/REST）——**全部支持 `expected_updated_at` 乐观锁**
+- **MCP 面不存在**：任何硬删除、执行代码、修改已有实验结果。**软删除存在但受限**（`mark_deleted` 只置 `deletedAt`，可恢复）；物理清理仅走 REST/UI（人操作）。所有 agent 写入带 `source:"agent"`，供 UI SourceBadge 渲染。
 
 ---
 
@@ -533,7 +533,7 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 2. **M2 数据模型落地**：Idea / Version / Experiment（四文件）/ Analysis（md+front-matter）的 Storage 读写 + 字段契约测试。
 3. **M2.5 冻结 results 协议**：`results.json`（metrics+metricSchema）与 `config.json`（params）分离契约 + 契约测试（评审建议，防后续返工）。
 4. **M3 索引**：SQLite 建表 + kv 倒排 + `index rebuild` + 关键查询（列表/筛选/键集合并集基数）。
-5. **M4 MCP server**：官方 SDK + FastMCP，25 工具按类别分步实现（先 Direction/Experiment，再 Idea/Version，再 Literature/Analysis/查询）。
+5. **M4 MCP server**：官方 SDK + FastMCP，26 工具按类别分步实现（先 Direction/Experiment，再 Idea/Version，再 Literature/Analysis/查询）。
 6. **M4.5 异步闭环先行验证**：`ideaforge watch` Watcher + sentinel 回收 + `list_experiments?since` 增量轮询，用示例实验跑通"创建→本地跑→回收→感知完成"（评审建议提前）。
 7. **M5 REST API + 事件**：FastAPI 路由（与 core 直连）、`/events/poll`、静态托管。
 8. **M6 Web UI**：从 `design/prototype.html` 移植为 `web/`（原生三件套），对接 REST，实现矩阵/表格+自定义列/详情/收件箱。

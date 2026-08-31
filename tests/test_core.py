@@ -111,3 +111,34 @@ def test_counter_increments(tmp_path):
     assert e1["id"] != e2["id"]
     assert e1["id"].startswith("exp-")
     assert e2["id"] > e1["id"]
+
+
+def test_soft_delete_and_restore(tmp_path):
+    """受限软删除：置 deletedAt 后查询默认过滤，restore 后可见。"""
+    repo = _setup(tmp_path)
+    d = service.create_direction("IM", repo)
+    idea = service.create_idea(d["direction_id"], "主干")
+    ver = service.create_version(idea["id"], commit="abc")
+    exp = service.create_experiment(ver["id"], {"lr": 0.005})
+
+    # 软删实验 → list 不可见
+    r = service.mark_deleted("experiment", exp["id"])
+    assert r["deleted_at"] is not None
+    assert all(e["id"] != exp["id"] for e in service.list_experiments(d["direction_id"]))
+
+    # 恢复 → 可见
+    service.mark_deleted("experiment", exp["id"], restore=True)
+    assert any(e["id"] == exp["id"] for e in service.list_experiments(d["direction_id"]))
+
+    # 软删 idea / version / direction
+    service.mark_deleted("idea", idea["id"])
+    assert all(i["id"] != idea["id"] for i in service.list_ideas(d["direction_id"]))
+    service.mark_deleted("version", ver["id"])
+    assert all(v["id"] != ver["id"] for v in service.list_versions())
+    service.mark_deleted("direction", d["direction_id"])
+    assert all(x["id"] != d["direction_id"] for x in service.list_directions())
+
+    # 未知类型拒绝
+    import pytest
+    with pytest.raises(ValueError):
+        service.mark_deleted("unknown", "x")

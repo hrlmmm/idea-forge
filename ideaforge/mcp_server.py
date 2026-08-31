@@ -365,6 +365,15 @@ def list_proposals(status: str | None = None, limit: int = 20) -> dict:
     return _data({"proposals": props, "total": len(props)})
 
 
+@mcp.tool()
+def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dict:
+    """受限软删除/恢复：对 direction/paper/idea/version/experiment 置 deletedAt。
+
+    数据保留、查询默认过滤、可 restore 恢复。物理清理不在 agent 权限内（只留给 UI/REST）。
+    """
+    return _data(service.mark_deleted(entity_type, entity_id, restore))
+
+
 def run(transport: str = "stdio") -> None:
     mcp.run(transport=transport)
 

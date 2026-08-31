@@ -375,7 +375,7 @@ def list_experiments(direction_id: str | None = None, idea_id: str | None = None
             continue
         for exp_dir in sorted(edir.iterdir()):
             meta = read_json(exp_dir / "meta.json")
-            if not meta:
+            if not meta or meta.get("deletedAt"):
                 continue
             if idea_id:
                 vm = read_json(layout.version_meta(meta.get("versionId", ""))) or {}
@@ -495,6 +495,51 @@ def list_proposals(status: str | None = None) -> list[dict]:
             if p and (not status or p.get("status") == status):
                 out.append(p)
     return out
+
+
+# ---------------------------------------------------------------- 受限软删除（agent 可标记，物理清理只留人/UI）
+
+def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dict:
+    """受限软删除 / 恢复：置 `deletedAt`（数据保留、查询默认过滤、可恢复）。
+
+    entity_type ∈ {direction, paper, idea, version, experiment}。
+    物理清理不在 agent 权限内（只留给 UI/REST 的显式 prune）。
+    """
+    now = domain.utc_now()
+    target = None if restore else now
+
+    if entity_type == "paper":
+        dr = DataRoot()
+        path = dr.literature_meta(entity_id)
+    elif entity_type == "idea":
+        layout = _find_idea_root(entity_id)
+        path = layout.idea_meta(entity_id)
+    elif entity_type == "version":
+        layout = _find_version_root(entity_id)
+        path = layout.version_meta(entity_id)
+    elif entity_type == "experiment":
+        layout = _find_exp_root(entity_id)
+        path = layout.exp_meta(entity_id)
+    elif entity_type == "direction":
+        dr = DataRoot()
+        reg = read_json(dr.directions_file, {}) or {}
+        entry = reg.get(entity_id)
+        if not entry:
+            raise KeyError(f"direction not found: {entity_id}")
+        entry["deletedAt"] = target
+        atomic_write_json(dr.directions_file, reg)
+        return {"entity_type": entity_type, "entity_id": entity_id,
+                "deleted_at": target, "restored": restore}
+    else:
+        raise ValueError(f"unknown entity_type: {entity_type}")
+
+    meta = read_json(path)
+    if not meta:
+        raise KeyError(f"{entity_type} not found: {entity_id}")
+    meta["deletedAt"] = target
+    atomic_write_json(path, meta)
+    return {"entity_type": entity_type, "entity_id": entity_id,
+            "deleted_at": target, "restored": restore}
 
 
 # ---------------------------------------------------------------- 文献 ↔ Idea 关联（单一写路径维护 derivedIdeaIds）

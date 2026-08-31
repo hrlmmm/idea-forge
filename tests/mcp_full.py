@@ -51,7 +51,7 @@ async def main() -> int:
             await session.initialize()
             tools = await session.list_tools()
             names = sorted(t.name for t in tools.tools)
-            check("25 个工具", len(names) == 25, f"实际 {len(names)}")
+            check("26 个工具", len(names) == 26, f"实际 {len(names)}")
 
             async def call(name, args):
                 res = await session.call_tool(name, args)
@@ -132,6 +132,16 @@ async def main() -> int:
             check("propose_experiment", '"proposal_id"' in t)
             t = await call("list_proposals", {})
             check("list_proposals", '"试 lr=0.01"' in t)
+
+            # ---- 受限软删除
+            t = await call("mark_deleted", {"entity_type": "experiment", "entity_id": exp["id"]})
+            check("mark_deleted 软删", '"deleted_at"' in t and "null" not in t)
+            t = await call("list_experiments", {"direction_id": d["direction_id"]})
+            check("软删后列表过滤", exp["id"] not in t)
+            t = await call("mark_deleted", {"entity_type": "experiment", "entity_id": exp["id"], "restore": True})
+            check("mark_deleted 恢复", '"restored": true' in t)
+            t = await call("mark_deleted", {"entity_type": "nope", "entity_id": "x"})
+            check("mark_deleted 拒绝未知类型", "unknown entity_type" in t)
 
     passed = 25 - len(FAILED)
     print(f"\n=== 通过 {passed}/25，失败 {len(FAILED)}: {FAILED} ===")

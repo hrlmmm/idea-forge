@@ -246,6 +246,22 @@ def api_list_proposals(status: str | None = None):
     return {"proposals": service.list_proposals(status)}
 
 
+# 软删除（受限）：只有人能删（UI/REST），agent 只能经 MCP mark_deleted
+_ENTITY_SINGULAR = {"directions": "direction", "papers": "paper", "ideas": "idea",
+                    "versions": "version", "experiments": "experiment"}
+
+
+@app.delete("/api/v1/{collection}/{entity_id}")
+def api_soft_delete(collection: str, entity_id: str):
+    singular = _ENTITY_SINGULAR.get(collection)
+    if not singular:
+        raise HTTPException(404, "unknown resource")
+    try:
+        return service.mark_deleted(singular, entity_id)
+    except Exception as e:
+        raise _err(e)
+
+
 @app.post("/api/v1/proposals/{proposal_id}/approve")
 def api_approve_proposal(proposal_id: str):
     # v0.1：批准 = 按 proposedParams 创建实验并置 running
