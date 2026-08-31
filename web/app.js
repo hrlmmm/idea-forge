@@ -154,76 +154,102 @@ function vLiterature() {
   return `<div class="view"><div class="page-title">文献库 <span style="font-size:var(--fs-sm);color:var(--neutral-400);font-weight:400">${state.papers.length} 篇</span></div><div class="card">${rows}</div></div>`;
 }
 
-// ---------------------------------------------------------------- 视图：Idea 树（画布：节点卡片 + 贝塞尔连线 + 状态色条）
+// ---------------------------------------------------------------- 视图：Idea 树（画布：节点卡片 + 贝塞尔连线 + 状态色条 + 顶部方向徽章）
 function vIdeas() {
   if (!state.ideas.length) return `<div class="view"><div class="empty"><div class="ic">🌳</div><div class="t">这个方向还没有 Idea</div><div>从文献点『+ 衍生 Idea』创建</div></div></div>`;
 
-  // 构建树并做简单层状布局（深度优先：父先子后，同层垂直均布）
+  const curDir = state.directions.find((d) => d.id === state.directionId) || state.directions[0] || {};
+  const gitRemote = curDir.git_remote || "";
+
+  // 构建树
   const children = {};
   state.ideas.forEach((i) => { (children[i.parentIdeaId || "root"] = children[i.parentIdeaId || "root"] || []).push(i); });
-  const order = [];
-  const walk = (list) => list.forEach((n) => { order.push(n); if (children[n.id]) walk(children[n.id]); });
-  walk(children["root"] || []);
 
-  const nodeW = 200, nodeH = 78, hGap = 90, vGap = 26, pad = 24;
-  const depthCount = {};
-  order.forEach((n) => {
-    const d = depthOf(n.id);
-    depthCount[d] = (depthCount[d] || 0) + 1;
-  });
-  function depthOf(id, seen = new Set()) {
-    if (seen.has(id)) return 0;
-    const n = state.ideas.find((x) => x.id === id);
-    if (!n || !n.parentIdeaId) return 0;
-    seen.add(id);
-    return 1 + depthOf(n.parentIdeaId, seen);
+  // DFS 后序算每个节点的子树高度（叶子=1）
+  const subH = {};
+  function computeH(n) {
+    const kids = children[n.id] || [];
+    if (!kids.length) return subH[n.id] = 1;
+    let h = 0;
+    for (const c of kids) h += computeH(c);
+    return subH[n.id] = h;
   }
-  const yCursor = {};
-  const pos = {};
-  order.forEach((n) => {
-    const d = depthOf(n.id);
-    yCursor[d] = (yCursor[d] || 0);
-    pos[n.id] = { x: pad + d * (nodeW + hGap), y: pad + yCursor[d] * (nodeH + vGap) };
-    yCursor[d]++;
-  });
-  const maxDepth = Math.max(0, ...order.map((n) => depthOf(n.id)));
-  const maxPerLevel = Math.max(1, ...Object.values(depthCount));
-  const canvasW = pad * 2 + maxDepth * (nodeW + hGap) + nodeW;
-  const canvasH = pad * 2 + maxPerLevel * (nodeH + vGap);
+  const roots = children["root"] || [];
+  roots.forEach(computeH);
 
-  // 连线（父 → 子 贝塞尔曲线）
+  // 布局：父节点 y = 子节点 y 区间的中心（demo 风格居中）
+  const nodeW = 220, nodeH = 90, hGap = 80, vGap = 26, pad = 24;
+  const pos = {};
+  function layout(n, x, y) {
+    pos[n.id] = { x, y };
+    const kids = children[n.id] || [];
+    if (!kids.length) return;
+    const totalH = kids.reduce((s, c) => s + subH[c.id], 0);
+    const totalGap = (kids.length - 1) * vGap;
+    let cy = y - (totalH + totalGap) / 2;
+    for (const c of kids) {
+      const ch = subH[c.id];
+      layout(c, x + nodeW + hGap, cy + ch / 2);
+      cy += ch + vGap;
+    }
+  }
+  if (roots.length) {
+    const totalRootH = roots.reduce((s, n) => s + subH[n.id], 0) + (roots.length - 1) * vGap;
+    let ry = pad + totalRootH / 2;
+    for (const r of roots) {
+      const rh = subH[r.id];
+      layout(r, pad, ry);
+      ry += rh + vGap;
+    }
+  }
+  const maxX = Math.max(pad * 2, ...Object.values(pos).map((p) => p.x + nodeW + pad));
+  const maxY = Math.max(pad * 2, ...Object.values(pos).map((p) => p.y + nodeH / 2 + pad));
+
+  // 连线（父 → 子 贝塞尔曲线，已验证子节点连线用绿色）
+  const allNodes = roots.flatMap((r) => { const out = []; const w = (n) => { out.push(n); (children[n.id] || []).forEach(w); }; w(r); return out; });
   let paths = "";
-  order.forEach((n) => {
+  allNodes.forEach((n) => {
     if (!n.parentIdeaId) return;
     const p = pos[n.parentIdeaId], c = pos[n.id];
     if (!p || !c) return;
     const x1 = p.x + nodeW, y1 = p.y + nodeH / 2;
     const x2 = c.x, y2 = c.y + nodeH / 2;
     const mx = (x1 + x2) / 2;
-    paths += `<path d="M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="var(--neutral-300)" stroke-width="2"/>`;
+    const stroke = c.status === "validated" ? "var(--success-300)" : "var(--neutral-300)";
+    paths += `<path d="M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="2"/>`;
   });
 
-  // 节点卡片
-  const nodes = order.map((n) => {
+  // 节点卡片（demo 风格：name / meta / branch；状态色 + 已验证 ✓）
+  const nodes = allNodes.map((n) => {
     const exps = state.experiments.filter((e) => { const v = state.versions.find((x) => x.id === e.versionId); return v && v.ideaId === n.id; });
+    const verN = state.versions.filter((v) => v.ideaId === n.id).length;
+    const expN = exps.length;
     const cls = n.status === "validated" ? "validated" : n.status === "abandoned" ? "abandoned" : "active";
     const p = pos[n.id];
+    const branchColor = n.status === "abandoned" ? "var(--neutral-300)" : "var(--accent-500)";
     return `<div class="idea-node ${cls}" data-open-idea="${n.id}" style="left:${p.x}px;top:${p.y}px">
       <div class="left-bar"></div>
       ${n.status === "validated" ? '<span class="nd-check">✓</span>' : ""}
       <div class="nd-title">${esc(n.name)}</div>
-      <div class="nd-meta">${state.versions.filter((v) => v.ideaId === n.id).length} 版 · ${exps.length} 实验</div>
-      <div class="nd-meta" style="color:${n.status === "abandoned" ? "var(--neutral-300)" : "var(--accent-500)"}">⎇ ${esc(n.gitBranch || "")}</div>
+      <div class="nd-meta">${verN} 版 · ${expN} 实验</div>
+      <div class="nd-meta" style="color:${branchColor}">⎇ ${esc(n.gitBranch || "")}</div>
     </div>`;
   }).join("");
 
+  // 顶部 toolbar（方向名 + git remote chip）
+  const gitChip = gitRemote ? `<span class="chip" style="font-family:var(--font-mono)"><span style="color:var(--neutral-400)">git</span>&nbsp;${esc(gitRemote.replace(/^git@github\.com:|\.git$/g, ""))}</span>` : "";
   return `<div class="view">
-    <div class="page-title">Idea 分支树</div>
-    <div class="tree-canvas" style="position:relative;height:${canvasH}px;background-image:radial-gradient(var(--neutral-150) 1px,transparent 1px);background-size:24px 24px;border:1px solid var(--border-subtle);border-radius:var(--r-lg);overflow:hidden">
-      <svg class="tree-svg" style="position:absolute;inset:0;width:${canvasW}px;height:${canvasH}px;pointer-events:none">${paths}</svg>
+    <div class="toolbar" style="display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-3);flex-wrap:wrap">
+      <div class="page-title" style="margin:0">Idea 分支树</div>
+      <span style="font-size:var(--fs-md);color:var(--neutral-700);font-weight:600">${esc(state.directionName || curDir.name || "")}</span>
+      ${gitChip}
+      <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-400)">节点 = 该方向仓库的一条 git 分支</span>
+    </div>
+    <div class="tree-canvas" style="position:relative;min-height:300px;background-image:radial-gradient(var(--neutral-150) 1px,transparent 1px);background-size:24px 24px;border:1px solid var(--border-subtle);border-radius:var(--r-lg);overflow:auto">
+      <svg class="tree-svg" style="position:absolute;inset:0;width:${maxX}px;height:${maxY}px;pointer-events:none">${paths}</svg>
       ${nodes}
     </div>
-    <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">每个 Idea = 该方向仓库的一条 git 分支（⎇）；已验证带 ✓，已放弃半透明虚线。点击节点查看其实验。</div>
+    <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">点击节点查看其实验；已验证 ✓（绿）+ 绿色连线，已放弃半透明虚线。</div>
   </div>`;
 }
 
