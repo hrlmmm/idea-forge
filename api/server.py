@@ -56,6 +56,21 @@ class ExperimentIn(BaseModel):
     params: dict[str, Any] = {}
     name: str | None = None
     description: str | None = None
+    group_id: str | None = None
+
+
+class ExperimentGroupIn(BaseModel):
+    idea_id: str
+    name: str
+    purpose: str | None = None
+    status: str | None = None
+
+
+class ExperimentGroupUpdate(BaseModel):
+    name: str | None = None
+    purpose: str | None = None
+    status: str | None = None
+    conclusion: str | None = None
 
 
 class StatusIn(BaseModel):
@@ -189,7 +204,35 @@ def api_list_experiments(direction_id: str | None = None, idea_id: str | None = 
 def api_create_experiment(body: ExperimentIn):
     try:
         return service.create_experiment(body.version_id, body.params, body.name,
-                                         body.description, created_by="human")
+                                         body.description, created_by="human",
+                                         group_id=body.group_id)
+    except Exception as e:
+        raise _err(e)
+
+
+# ---------------------------------------------------------------- Experiment Group（实验线）
+
+@app.get("/api/v1/experiment-groups")
+def api_list_experiment_groups(idea_id: str | None = None,
+                               include_archived: bool = False):
+    return {"groups": service.list_experiment_groups(idea_id, include_archived)}
+
+
+@app.post("/api/v1/experiment-groups")
+def api_create_experiment_group(body: ExperimentGroupIn):
+    try:
+        return service.create_experiment_group(
+            body.idea_id, body.name, body.purpose,
+            body.status or "planning")
+    except Exception as e:
+        raise _err(e)
+
+
+@app.put("/api/v1/experiment-groups/{group_id}")
+def api_update_experiment_group(group_id: str, body: ExperimentGroupUpdate):
+    try:
+        return service.update_experiment_group(
+            group_id, body.name, body.purpose, body.status, body.conclusion)
     except Exception as e:
         raise _err(e)
 
@@ -249,7 +292,8 @@ def api_list_proposals(status: str | None = None):
 
 # 软删除（受限）：只有人能删（UI/REST），agent 只能经 MCP mark_deleted
 _ENTITY_SINGULAR = {"directions": "direction", "papers": "paper", "ideas": "idea",
-                    "versions": "version", "experiments": "experiment"}
+                    "versions": "version", "experiments": "experiment",
+                    "experiment-groups": "group"}
 
 
 @app.delete("/api/v1/{collection}/{entity_id}")
@@ -326,7 +370,7 @@ def api_events_poll(since: int = 0):
 
 @app.get("/api/v1/events/log")
 def api_events_log(limit: int = 50):
-    """Agent 执行记录：最近的事件（倒序）。"""
+    """最近的事件（倒序，供轮询 / 调试 / 执行历史追溯）。"""
     idx = Index()
     try:
         rows = idx._conn.execute(

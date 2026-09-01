@@ -47,6 +47,14 @@ IDEA_VALIDATED = "validated"
 IDEA_ABANDONED = "abandoned"
 IDEA_ALL_STATUS = {IDEA_ACTIVE, IDEA_VALIDATED, IDEA_ABANDONED}
 
+# ---------------------------------------------------------------- 实验组（实验线）状态
+
+GROUP_PLANNING = "planning"
+GROUP_ACTIVE = "active"
+GROUP_DONE = "done"
+GROUP_ABANDONED = "abandoned"
+GROUP_ALL_STATUS = {GROUP_PLANNING, GROUP_ACTIVE, GROUP_DONE, GROUP_ABANDONED}
+
 # ---------------------------------------------------------------- 文献可写字段白名单（评审修订）
 
 PAPER_WRITABLE_FIELDS = {"title", "authors", "year", "venue", "tags",

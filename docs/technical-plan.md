@@ -11,14 +11,16 @@
 Direction(研究方向 = 一个 GitHub 仓库 + 一个本地目录)
   → Literature(文献，全局库，directions:[] 支持跨方向共用)
   → Idea(= 该方向仓库的一条 git branch，可分叉，软删除保留记录)
+    → ExperimentGroup(实验组/实验线：一组实验对应一个验证目的，如可行性/对比/消融)
     → Version(= 该分支上的某次 commit)
-      → Experiment(params/metrics 键值，字段名绝不写死)
+      → Experiment(params/metrics 键值，字段名绝不写死，可选归入某个实验组)
         → Analysis(agent 或人写回复盘)
 ```
 
 - 用户可有多个 Direction；每个 Direction 独立本地目录 + 独立 git 仓库 + 独立 `.research/` 元数据。
-- 今日动态 / Agent 收件箱是**跨方向**的。
+- 今日动态是**跨方向**的。
 - 实验状态机 `pending → running → done / failed`，终态写 `finished_at`。
+- 实验组状态机 `planning → active → done / abandoned`（abandoned = 软删除，可恢复）。
 - 废弃版本/想法软删除：保留轻量元数据，大产物（模型 checkpoint 等）标 `large_artifact` 可 prune。
 - **移动端已砍**：v0.1 纯桌面 Web UI，无响应式适配。
 
@@ -79,8 +81,9 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
 <direction_root>/                     用户工作目录（git repo）
 ├─ .research/
 │  ├─ config.json                     # 方向配置（见 §4.1）
-│  ├─ counters.json                   # 递增计数器：exp_seq / version_seq / idea_seq
+│  ├─ counters.json                   # 递增计数器：idea_seq / grp_seq / version_seq / exp_seq
 │  ├─ ideas/<idea_id>/meta.json
+│  ├─ groups/<group_id>/meta.json     # 实验组（实验线）：归属 Idea、验证目的、状态、结论
 │  ├─ versions/<version_id>/meta.json
 │  ├─ experiments/<exp_id>/
 │  │  ├─ meta.json
@@ -92,7 +95,7 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
 └─ …用户自己的科研文件（平台绝不接管）
 ```
 
-**index.db 放全局 `<data_root>`**：今日动态 / 收件箱 / 全局搜索跨方向，单库 + `direction_id` 列过滤最省事；方向级查询只是加 WHERE。方向 `.research/` 内不重复建库。
+**index.db 放全局 `<data_root>`**：今日动态 / 执行记录 / 全局搜索跨方向，单库 + `direction_id` 列过滤最省事；方向级查询只是加 WHERE。方向 `.research/` 内不重复建库。
 
 ---
 
@@ -200,7 +203,31 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
 - `gitRef` = commit 短 hash（8 位，UI 用），`fullGitRef` = 完整 hash（校验/追溯用）。
 - 软删除：`status: "archived"` + `deletedAt`；其下实验只降级为 `opacity .5` 显示，**不 cascade 删除**。
 
-### 4.5 `.research/experiments/<exp_id>/`（四个文件，生命周期各不同）
+### 4.5 `.research/groups/<group_id>/meta.json`（实验组 / 实验线）
+
+一个 Idea 下可按验证目的分多组实验（可行性 → 主对比 → 消融…），每组是独立实体，实验通过 `groupId` 挂载：
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "grp-001",
+  "ideaId": "idea-c1a9b2c3",
+  "name": "主对比",
+  "purpose": "在 a2 上对比 MAFT vs 3 个基线，验证方法优势",
+  "status": "active",
+  "conclusion": "",
+  "createdAt": "2026-08-31T10:00:00Z",
+  "updatedAt": "2026-08-31T10:00:00Z",
+  "deletedAt": null
+}
+```
+
+- `name`/`purpose`/`conclusion` 均为自由文本，由 agent 填充；平台不枚举组类型（schema-flexible，与 params/metrics 同一原则）。
+- 状态机 `planning → active → done / abandoned`；`abandoned` = 软删除（保留 meta 可恢复），实验不 cascade 删除。
+- 实验计数（每组成员数）由查询时从实验索引推导，不落盘，避免双写不一致。
+- 事件：`experiment_group.created` / `experiment_group.updated`。
+
+### 4.6 `.research/experiments/<exp_id>/`（四个文件，生命周期各不同）
 
 **`meta.json`（创建即生成，全生命周期更新）：**
 
@@ -267,7 +294,7 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
 
 > **状态源规则（评审修订）**：`meta.status` 是**唯一权威状态**（查询 / UI / 索引一律以它为准）；`status.json` 是**不可变审计日志**（append-only，仅用于追溯与崩溃恢复）。Watcher / agent 更新状态时严格两步：① append `status.json` 历史 → ② 原子更新 `meta.status`（若第 ② 步失败则回滚本次状态变更）。**不允许**把 `status.json.state` 当查询源。
 
-### 4.6 `.research/experiments/<exp_id>/analyses/<analysis_id>.md`
+### 4.7 `.research/experiments/<exp_id>/analyses/<analysis_id>.md`
 
 ```markdown
 ---
@@ -288,7 +315,7 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 - `references` 引用约定：只允许写该实验实际存在的 `params`/`metrics` 键名（front-matter 与正文中同名键由 UI 渲染为 chip）；引用不存在键 → UI warning。这是"analysis 强制引用 metric 键名"的落地点。
 - **未读状态归属（评审修订）**：`is_read` **不写进 agent 的 md**（避免污染来源语义），也**不进 index.db**（避免 rebuild 丢失用户状态），统一存全局 `<data_root>/read_state.json`：`{"an-<id>": {"read": false, "readAt": null}}`。索引 rebuild 不触碰该文件。
 
-### 4.7 "字段不写死"的实现机制
+### 4.8 "字段不写死"的实现机制
 
 - `params`/`metrics` 是**纯 JSON object**：键任意、值类型任意（str/num/bool/list）。
 - `metricSchema` 只是**声明**（提示类型/单位/方向），Storage 与 Index **绝不强校验**——写入成功即接受，未知键照样进索引、照样参与 UI 键集合。
@@ -312,9 +339,9 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 | `kv`（EAV 倒排） | exp_id, kind('param'\|'metric'), key, value_text, value_num, value_bool | **键并集 / 取值基数 / 数值排序 / 变体族聚类**；`value_num` 供图表与 Δ 计算 |
 
 **kv 类型归一化（评审修订）**：写入 kv 时，仅当值可 `parseFloat` 才填 `value_num`，否则 `value_num=NULL`、原值入 `value_text`；数值聚合 / Δ 计算只作用于 `value_num` 非 NULL 的行——字符串误写进数值键不会静默丢聚合。
-| `analyses` | analysis_id PK, experiment_id, source, author, created_at, adopted, references_json | 收件箱列表、来源徽章；未读状态读 `read_state.json`（不在库内） |
+| `analyses` | analysis_id PK, experiment_id, source, author, created_at, adopted, references_json | 执行记录列表、来源徽章；未读状态读 `read_state.json`（不在库内） |
 | `events` | seq INTEGER PK AUTOINCREMENT, type, data_json, ts | 事件游标（轮询/SSE 用）；**易失**，rebuild 清空后前端以 `since=0` 全量拉取兜底 |
-| `proposals` | proposal_id PK, version_id, title, rationale, proposed_params_json, based_on_experiment_ids_json, confidence, status, created_at | 收件箱提议列表与状态流转 |
+| `proposals` | proposal_id PK, version_id, title, rationale, proposed_params_json, based_on_experiment_ids_json, confidence, status, created_at | 执行记录提议列表与状态流转 |
 
 **重建入口**：CLI `ideaforge index rebuild` = 清空全部表 → 递归遍历 `<data_root>/literature` 与每个 `<direction_root>/.research` 的 JSON 重灌（含 kv 倒排重算）。UI 侧栏"索引状态 → 手动重建"调同一接口。**`views.json` 不属于索引**，重建不丢用户预设。
 
@@ -361,7 +388,7 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 
 ---
 
-## 9. MCP 工具清单（24 个，可直接照此实现）
+## 9. MCP 工具清单（31 个，可直接照此实现）
 
 统一规则：① 所有工具返回信封 `{ok, context:{direction_id, ts}, data}`；② `direction_id` 缺省取进程级"当前方向"（由 `switch_direction` 设置），每个返回都回显 context 防 agent 串方向；③ `params`/`metrics` 一律 `dict[str, any]` 透传，平台只存不校验语义；④ **受限变更工具**（`update_paper` / `update_idea_status` / `update_experiment_status` / `set_metrics` / `link_paper_to_idea` / `mark_read`）入参支持可选 `expected_updated_at?: str`（乐观锁），不匹配返回 `{ok:false, error:"conflict", current_updated_at}`（评审修订）。
 
@@ -395,9 +422,18 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 | `list_versions` | 列出版本 | `{idea_id?: str, limit?: int, offset?: int}` | `{versions:[{version_id,idea_id,commit,short_hash,note,experiment_count,created_at}]}` |
 
 ### E. Experiment（核心，schema-flexible）
+
+**E-0. ExperimentGroup（实验线，2026-09-01 新增）**
 | 工具 | 用途 | 入参 schema | 返回 data |
 |---|---|---|---|
-| `create_experiment` | 新建实验，返回建议运行命令 | `{version_id: str, name?: str, params: dict[str,any], metric_schema?: [{key:str,type:"number"\|"string"\|"bool",unit?:str,higher_is_better?:bool}], status?: "pending"="pending"}` | `{experiment_id,name,version_id,status,params,suggested_command: str,results_file_convention: str,created_at}` |
+| `create_experiment_group` | 在 Idea 下新建实验组（一条实验线） | `{idea_id: str, name: str, purpose?: str, status?: "planning"\|"active"\|"done"\|"abandoned"="planning"}` | `{group_id,idea_id,name,purpose,status,created_at}` |
+| `update_experiment_group` | 更新组名/目的/状态/结论；置 `abandoned` 即软删除 | `{group_id: str, name?: str, purpose?: str, status?: str, conclusion?: str}` | `{group_id, changed: str[], status, updated_at}` |
+| `list_experiment_groups` | 列出实验组（含每组成员数） | `{idea_id?: str, include_archived?: bool=false}` | `{groups:[{group_id,idea_id,name,purpose,status,conclusion,experiment_count,updated_at}], total}` |
+
+**E-1. Experiment**
+| 工具 | 用途 | 入参 schema | 返回 data |
+|---|---|---|---|
+| `create_experiment` | 新建实验（可选归入实验组），返回建议运行命令 | `{version_id: str, name?: str, group_id?: str, params: dict[str,any], metric_schema?: [{key:str,type:"number"\|"string"\|"bool",unit?:str,higher_is_better?:bool}], status?: "pending"="pending"}` | `{experiment_id,name,version_id,group_id?,status,params,suggested_command: str,results_file_convention: str,created_at}` |
 | `update_experiment_status` | 状态机迁移 running/done/failed；终态写 finished_at | `{experiment_id: str, status: "running"\|"done"\|"failed", finished_at?: str(ISO8601), error?: str}` | `{experiment_id,status,finished_at,warning?: "missing_metrics"}` |
 | `set_metrics` | 写 metrics + 可选声明 schema。**追加式**：已有键覆盖时保留 metric_history 快照 | `{experiment_id: str, metrics: dict[str,any], metric_schema?: [...]}` | `{experiment_id, metrics_count, added_keys: str[], overwritten_keys: str[], warning?: str}` |
 | `list_experiments` | 列表 + **键集合/基数自省** | `{direction_id?: str, idea_id?: str, version_id?: str, status?: str[], since?: str, limit?: int=50, offset?: int=0}` | `{experiments:[{...}], key_stats:{params_keys:[{key,cardinality}], metrics_keys:[{key,cardinality}]}}` |
@@ -433,9 +469,9 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 
 ## 10. 权限边界（工具层面落地）
 
-- **只读（10 个）**：`list_directions` `search_papers` `list_ideas` `list_versions` `list_experiments` `get_experiment` `get_analyses` `global_search` `get_key_set` `list_proposals`
-- **只写新建 / append-only（9 个）**：`create_direction` `add_paper` `create_idea` `branch_idea` `create_version` `create_experiment` `write_analysis` `propose_experiment` `set_metrics`（覆盖同键时保留 `metric_history` 快照）
-- **受限变更（7 个）**：`switch_direction`（上下文）`update_paper`（**白名单字段**）`update_idea_status` `update_experiment_status`（终态 done/failed 不可逆迁移，纠错需 `force:true` 仅 UI 可用）`mark_read` `link_paper_to_idea` `mark_deleted`（**受限软删除**：置 `deletedAt`，数据保留可 restore，物理清理只留 UI/REST）——**全部支持 `expected_updated_at` 乐观锁**
+- **只读（11 个）**：`list_directions` `search_papers` `list_ideas` `list_versions` `list_experiments` `get_experiment` `list_experiment_groups` `get_analyses` `global_search` `get_key_set` `list_proposals`
+- **只写新建 / append-only（10 个）**：`create_direction` `add_paper` `create_idea` `branch_idea` `create_version` `create_experiment` `create_experiment_group` `write_analysis` `propose_experiment` `set_metrics`（覆盖同键时保留 `metric_history` 快照）
+- **受限变更（8 个）**：`switch_direction`（上下文）`update_paper`（**白名单字段**）`update_idea_status` `update_experiment_status`（终态 done/failed 不可逆迁移，纠错需 `force:true` 仅 UI 可用）`update_experiment_group`（置 abandoned 即软删除）`mark_read` `link_paper_to_idea` `mark_deleted`（**受限软删除**：置 `deletedAt`，数据保留可 restore，物理清理只留 UI/REST）——**全部支持 `expected_updated_at` 乐观锁**
 - **MCP 面不存在**：任何硬删除、执行代码、修改已有实验结果。**软删除存在但受限**（`mark_deleted` 只置 `deletedAt`，可恢复）；物理清理仅走 REST/UI（人操作）。所有 agent 写入带 `source:"agent"`，供 UI SourceBadge 渲染。
 
 ---
@@ -450,7 +486,8 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 | Literature | `GET /papers?q=&tags=&direction_id=&derived=&sort=` · `POST /papers` · `PUT /papers/{id}` · `DELETE /papers/{id}`(软删) · `POST /papers/{id}/link-idea` · `DELETE /papers/{id}/link-idea/{idea_id}` | search_papers / add_paper / update_paper / link_paper_to_idea |
 | Idea | `GET /ideas?direction_id=&status=` · `POST /ideas` · `GET /ideas/{id}` · `PUT /ideas/{id}` · `POST /ideas/{id}/branch` · `DELETE /ideas/{id}`(→abandoned) | list_ideas / create_idea / update_idea_status / branch_idea |
 | Version | `GET /ideas/{idea_id}/versions` · `POST /versions` · `GET /versions/{id}` · `DELETE /versions/{id}`(软删) | list_versions / create_version |
-| Experiment | `GET /experiments?direction_id=&idea_id=&version_id=&status=&q=`(全局表) · `GET /ideas/{i}/versions/{v}/experiments` · `POST /experiments` · `GET /experiments/{id}` · `PUT /experiments/{id}/status` · `PUT /experiments/{id}/metrics` · `DELETE /experiments/{id}`(软删) | list_experiments / create_experiment / update_experiment_status / set_metrics / get_experiment |
+| ExperimentGroup | `GET /experiment-groups?idea_id=&include_archived=` · `POST /experiment-groups` · `PUT /experiment-groups/{id}`(置 abandoned 软删) | list_experiment_groups / create_experiment_group / update_experiment_group |
+| Experiment | `GET /experiments?direction_id=&idea_id=&version_id=&status=&q=`(全局表) · `GET /ideas/{i}/versions/{v}/experiments` · `POST /experiments`(`group_id` 可选) · `GET /experiments/{id}` · `PUT /experiments/{id}/status` · `PUT /experiments/{id}/metrics` · `DELETE /experiments/{id}`(软删) | list_experiments / create_experiment / update_experiment_status / set_metrics / get_experiment |
 | Analysis | `GET /experiments/{id}/analyses` · `POST /experiments/{id}/analyses`(source=human) · `PUT /analyses/{id}` · `PUT /analyses/{id}/read` · `DELETE /analyses/{id}`(软删) | get_analyses / write_analysis / mark_read |
 | Proposal | `GET /proposals?status=pending` · `POST /proposals/{id}/approve`(人批准→创建 experiment) · `POST /proposals/{id}/reject`{reason} | propose_experiment |
 | 工具/事件 | `GET /search?q=` · `GET /key-set?scope=&scope_id=` · `GET /events/poll?since=<seq>` · `GET /events/stream`(SSE) | global_search / get_key_set / 事件推送 |
@@ -533,13 +570,13 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 ## 15. v0.1 里程碑拆分（实现顺序）
 
 1. **M1 骨架**：pyproject + CLI 入口 + `core/storage`（目录布局、原子写、counters）+ 一个方向可 `create` / `list`。
-2. **M2 数据模型落地**：Idea / Version / Experiment（四文件）/ Analysis（md+front-matter）的 Storage 读写 + 字段契约测试。
+2. **M2 数据模型落地**：Idea / Version / Experiment（四文件）/ Analysis（md+front-matter）/ ExperimentGroup 的 Storage 读写 + 字段契约测试。
 3. **M2.5 冻结 results 协议**：`results.json`（metrics+metricSchema）与 `config.json`（params）分离契约 + 契约测试（评审建议，防后续返工）。
 4. **M3 索引**：SQLite 建表 + kv 倒排 + `index rebuild` + 关键查询（列表/筛选/键集合并集基数）。
-5. **M4 MCP server**：官方 SDK + FastMCP，26 工具按类别分步实现（先 Direction/Experiment，再 Idea/Version，再 Literature/Analysis/查询）。
+5. **M4 MCP server**：官方 SDK + FastMCP，31 工具（含实验组 3 个）按类别分步实现（先 Direction/Experiment，再 Idea/Version，再 Literature/Analysis/查询）。
 6. **M4.5 异步闭环先行验证**：`ideaforge watch` Watcher + sentinel 回收 + `list_experiments?since` 增量轮询，用示例实验跑通"创建→本地跑→回收→感知完成"（评审建议提前）。
 7. **M5 REST API + 事件**：FastAPI 路由（与 core 直连）、`/events/poll`、静态托管。
-8. **M6 Web UI**：从 `design/prototype.html` 移植为 `web/`（原生三件套），对接 REST，实现矩阵/表格+自定义列/详情/收件箱。
+8. **M6 Web UI**：从 `design/prototype.html` 移植为 `web/`（原生三件套），对接 REST，实现矩阵/表格+自定义列/详情/执行记录。
 
 **依赖**：`mcp`（官方 SDK）、`fastapi`、`uvicorn`、`pydantic>=2`、`sse-starlette`（可选）。开发工具：`pytest`、`ruff`。
 

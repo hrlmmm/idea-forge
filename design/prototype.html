@@ -1,9 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+<!-- 阶段1 设计原型快照：仅作视觉/交互参考。
+     注：原「Agent 收件箱（提议审批）」视图已在 v0.1 实现期否决并移除——
+     实验是否继续由用户在与 agent 的对话中确认，不在网页上审批。后续的
+     「Agent 执行记录」页也已移除：执行记录以 REST 事件流（/api/v1/events）承载。 -->
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Idea Forge — 可交互原型</title>
+<title>Idea Forge — 可交互原型（阶段1 设计快照）</title>
 <style>
 /* ============ 设计令牌（严格遵循 docs/product-design.md §3） ============ */
 :root{
@@ -229,7 +233,7 @@ a:hover{color:var(--accent-600);text-decoration:underline}
 .m-progress::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent 0 6px,var(--accent-600) 6px 12px);animation:flow 1.4s linear infinite;opacity:.7}
 @keyframes flow{from{background-position:0 0}to{background-position:24px 0}}
 
-/* inbox proposal */
+/* proposal（原型遗留样式，实际实现无此视图） */
 .proposal{border:1px solid var(--border);border-left:3px solid var(--accent-600);border-radius:var(--r-lg);padding:var(--sp-4);background:var(--neutral-0);margin-bottom:var(--sp-3)}
 .proposal .pr-head{font-size:var(--fs-xs);color:var(--neutral-500);margin-bottom:var(--sp-2)}
 .proposal .pr-title{font-size:var(--fs-md);font-weight:600;color:var(--neutral-800);margin-bottom:var(--sp-3)}
@@ -269,7 +273,6 @@ select.styled{height:28px;border:1px solid var(--border);border-radius:var(--r-s
     <div class="sb-item" data-route="literature"><span>📄</span><span class="sb-label">文献库</span></div>
     <div class="sb-item active" data-route="ideas"><span>🌳</span><span class="sb-label">Idea 分支树</span></div>
     <div class="sb-item" data-route="experiments"><span>🧪</span><span class="sb-label">实验总览</span></div>
-    <div class="sb-item" data-route="inbox"><span>📥</span><span class="sb-label">Agent 收件箱</span><span class="sb-badge" id="badge-inbox">2</span></div>
     <div class="sb-section-title sb-label">IDEA 快捷跳转</div>
     <div id="sb-ideas"></div>
     <div class="sb-sub"><div class="sb-item sb-label" style="color:var(--accent-600)"><span>+</span><span class="sb-label">新建 Idea（新分支）</span></div></div>
@@ -451,7 +454,6 @@ function render(){
   else if(state.route==='ideas')c.innerHTML=viewIdeasTree();
   else if(state.route==='experiments')c.innerHTML=viewExperiments();
   else if(state.route==='today')c.innerHTML=viewToday();
-  else if(state.route==='inbox')c.innerHTML=viewInbox();
   else if(state.route==='exp-detail')c.innerHTML=viewExpDetail();
   else if(state.route==='diff')c.innerHTML=viewDiff();
   else if(state.route==='chart')c.innerHTML=viewChart();
@@ -464,7 +466,6 @@ function renderCrumb(){
   if(state.route==='ideas')return `${dirSeg}<span class="sep">/</span><span class="cur">Idea 分支树</span>`;
   if(state.route==='experiments')return `${dirSeg}<span class="sep">/</span><span class="cur">实验总览</span>`;
   if(state.route==='today')return `<span class="cur">今日动态</span> <span style="font-size:var(--fs-xs);color:var(--neutral-400);font-weight:400">（跨方向）</span>`;
-  if(state.route==='inbox')return `<span class="cur">Agent 收件箱</span> <span style="font-size:var(--fs-xs);color:var(--neutral-400);font-weight:400">（跨方向）</span>`;
   if(state.route==='exp-detail'){
     const v=DATA.versions.find(x=>x.id===state.versionId);const idea=DATA.ideas.find(x=>x.id===state.ideaId);const e=DATA.experiments.find(x=>x.id===state.expId);
     return `${dirSeg}<span class="sep">/</span><span data-go="idea">${idea?idea.name:''}</span><span class="sep">/</span><span data-go="version">${v?v.name:''}</span><span class="sep">/</span><span class="mono">${e?e.id:''}</span>`;
@@ -902,33 +903,6 @@ function viewChart(){
       ${circles}
     </svg></div>
     <div style="font-size:var(--fs-xs);color:var(--neutral-400);margin-top:var(--sp-2)">X/Y 轴选项来自当前版本实验的 params/metrics 键并集，非数值键置灰。点 hover 看实验详情。</div>
-  </div>`;
-}
-
-/* ---------- 视图：Inbox ---------- */
-function viewInbox(){
-  return `<div class="view">
-    <div class="page-title">Agent 收件箱</div>
-    <div class="permission-bar">Agent 可以<b>创建实验记录、写入分析、提出提议</b>；<b>不会</b>执行代码、删除数据或修改已有实验结果。所有 agent 写入都带 🤖 来源徽章。</div>
-    <div class="seg" style="margin-bottom:var(--sp-4)"><button class="on">待批准提议 (2)</button><button>未读分析 (${DATA.experiments.filter(e=>e.analysis&&!e.analysis.read).length})</button></div>
-    <div class="proposal">
-      <div class="pr-head">🤖 Agent 自动 · 08-31 14:22 · 基于 exp-041、exp-043</div>
-      <div class="pr-title">建议：在 a3 上试 lr=0.005 + dropout=0.3 + hidden_dim=256</div>
-      <div class="pr-body">在 a3 上把 hidden_dim 从 128 提到 256 时 <span class="metric-chip" style="background:var(--accent-50);border:1px solid var(--accent-200);color:var(--accent-700);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:11px">influence_spread</span> 从 0.452 升到 0.466，但显存吃紧。建议插入 dropout=0.3 抑制过拟合，保留 256 配置。参考 exp-041 的 influence_spread=0.466。</div>
-      <div class="mini-diff">
-        <div class="md-row chg"><span class="kv-key">hidden_dim</span><span>128</span><span>256</span><span>↑</span></div>
-        <div class="md-row chg"><span class="kv-key">dropout</span><span>0.3</span><span>0.5</span><span>↑</span></div>
-        <div class="md-row" style="color:var(--neutral-400)"><span>其余 14 项与 exp-041 相同</span><span></span><span></span><span>▾</span></div>
-      </div>
-      <div style="font-size:var(--fs-xs);color:var(--neutral-500);margin-bottom:var(--sp-3)">目标版本：a3 (#c07e2a) · 预计运行 ~2 小时</div>
-      <div style="display:flex;gap:var(--sp-2)"><button class="btn btn-primary">批准并创建</button><button class="btn btn-secondary">修改参数</button><button class="btn btn-ghost">拒绝</button></div>
-    </div>
-    <div class="proposal">
-      <div class="pr-head">🤖 Agent 自动 · 08-31 11:08 · 基于 exp-025</div>
-      <div class="pr-title">建议：d2 用 SIR + layers=4 + beta=0.4 跑传播对比</div>
-      <div class="pr-body">d2 上 SIR 明显强于 IC。<span class="metric-chip" style="background:var(--accent-50);border:1px solid var(--accent-200);color:var(--accent-700);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:11px">infected_ratio</span> 在 layers=4、beta=0.4 下已达 0.58，建议把这套传播参数固定，回头验证主干模型。</div>
-      <div style="display:flex;gap:var(--sp-2)"><button class="btn btn-primary">批准并创建</button><button class="btn btn-ghost">拒绝</button></div>
-    </div>
   </div>`;
 }
 

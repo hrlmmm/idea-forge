@@ -194,6 +194,12 @@ class DirectionLayout:
     def exp_analyses(self, exp_id: str) -> Path:
         return self.exp_dir(exp_id) / "analyses"
 
+    def group_dir(self, group_id: str) -> Path:
+        return self.research / "groups" / group_id
+
+    def group_meta(self, group_id: str) -> Path:
+        return self.group_dir(group_id) / "meta.json"
+
     def init(self, direction_config: dict) -> None:
         """初始化 .research/（幂等）。"""
         atomic_write_json(self.config, direction_config)

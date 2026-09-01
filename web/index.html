@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Idea Forge</title>
-<link rel="stylesheet" href="/style.css">
+<!-- 版本号：改动前端后 bump，避免浏览器缓存旧 JS/CSS -->
+<link rel="stylesheet" href="/style.css?v=2">
 </head>
 <body>
 <div class="app" id="app" data-density="compact">
@@ -25,7 +26,6 @@
       <div class="sb-item" data-route="literature"><span>📄</span><span class="sb-label">文献库</span></div>
       <div class="sb-item active" data-route="ideas"><span>🌳</span><span class="sb-label">Idea 分支树</span></div>
       <div class="sb-item" data-route="experiments"><span>🧪</span><span class="sb-label">实验总览</span></div>
-      <div class="sb-item" data-route="agent-log"><span>🤖</span><span class="sb-label">Agent 执行记录</span></div>
       <div class="sb-section-title sb-label">IDEA 快捷跳转</div>
       <div id="sb-ideas"></div>
     </nav>
@@ -50,6 +50,6 @@
 <div class="drawer" id="drawer"><div class="drawer-head"><span id="drawer-title" style="font-weight:600;color:var(--neutral-800)"></span><button class="btn btn-ghost" id="drawer-close">✕</button></div><div class="drawer-body" id="drawer-body"></div></div>
 <div class="toast-wrap" id="toast-wrap"></div>
 
-<script src="/app.js"></script>
+<script src="/app.js?v=2"></script>
 </body>
 </html>

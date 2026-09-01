@@ -127,6 +127,47 @@ def test_experiment_description_and_code_link(tmp_path):
     assert got["params"] == {"lr": 0.005, "dropout": 0.3}
 
 
+def test_experiment_group_roundtrip(tmp_path):
+    """实验组（实验线）：Idea 下建组 → 实验挂组 → 更新状态/结论 → 软删恢复。"""
+    repo = _setup(tmp_path)
+    d = service.create_direction("IM", repo)
+    idea = service.create_idea(d["direction_id"], "主干")
+    ver = service.create_version(idea["id"], commit="abc")
+
+    g = service.create_experiment_group(idea["id"], "feasibility",
+                                        "小数据验证方向是否可行")
+    gid = g["id"]
+    assert g["status"] == "planning"
+    assert g["ideaId"] == idea["id"]
+    assert gid.startswith("grp-")
+
+    # 实验可挂到组下（groupId 写入 meta）
+    exp = service.create_experiment(ver["id"], {"lr": 0.005},
+                                    name="feas-1", group_id=gid)
+    assert service.get_experiment(exp["id"])["groupId"] == gid
+
+    # 按 idea 过滤列组，附实验数
+    groups = service.list_experiment_groups(idea_id=idea["id"])
+    assert len(groups) == 1
+    assert groups[0]["experiment_count"] == 1
+
+    # 更新状态与组级结论
+    updated = service.update_experiment_group(gid, status="done",
+                                              conclusion="方向可行，进入正式对比")
+    assert updated["status"] == "done"
+    assert updated["conclusion"] == "方向可行，进入正式对比"
+
+    # 软删组 → 默认过滤；恢复 → 可见
+    service.mark_deleted("group", gid)
+    assert all(x["id"] != gid for x in service.list_experiment_groups(idea_id=idea["id"]))
+    service.mark_deleted("group", gid, restore=True)
+    assert any(x["id"] == gid for x in service.list_experiment_groups(idea_id=idea["id"]))
+
+    # 非法状态拒绝
+    with pytest.raises(ValueError):
+        service.update_experiment_group(gid, status="nope")
+
+
 def test_soft_delete_and_restore(tmp_path):
     """受限软删除：置 deletedAt 后查询默认过滤，restore 后可见。"""
     repo = _setup(tmp_path)

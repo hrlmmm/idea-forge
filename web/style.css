@@ -222,7 +222,7 @@ a:hover{color:var(--accent-600);text-decoration:underline}
 .m-progress::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent 0 6px,var(--accent-600) 6px 12px);animation:flow 1.4s linear infinite;opacity:.7}
 @keyframes flow{from{background-position:0 0}to{background-position:24px 0}}
 
-/* inbox proposal */
+/* proposal 卡片（提议展示用，非审批入口） */
 .proposal{border:1px solid var(--border);border-left:3px solid var(--accent-600);border-radius:var(--r-lg);padding:var(--sp-4);background:var(--neutral-0);margin-bottom:var(--sp-3)}
 .proposal .pr-head{font-size:var(--fs-xs);color:var(--neutral-500);margin-bottom:var(--sp-2)}
 .proposal .pr-title{font-size:var(--fs-md);font-weight:600;color:var(--neutral-800);margin-bottom:var(--sp-3)}

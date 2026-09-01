@@ -58,6 +58,13 @@ def _find_exp_root(exp_id: str) -> DirectionLayout:
     raise KeyError(f"experiment not found: {exp_id}")
 
 
+def _find_group_root(group_id: str) -> DirectionLayout:
+    for _did, layout, _entry in _iter_directions():
+        if layout.group_meta(group_id).exists():
+            return layout
+    raise KeyError(f"experiment group not found: {group_id}")
+
+
 def _alpha_name(seq: int) -> str:
     """1 -> a1, 2 -> a2 …（version 命名）"""
     return f"a{seq}"
@@ -292,11 +299,113 @@ def list_versions(idea_id: str | None = None, include_archived: bool = False) ->
     return out
 
 
+# ---------------------------------------------------------------- Experiment Group（实验线：Idea 下的验证分组）
+
+def create_experiment_group(idea_id: str, name: str, purpose: str | None = None,
+                            status: str = domain.GROUP_PLANNING) -> dict:
+    """在 Idea 下新建实验组（一条实验线，如 feasibility / main / ablation）。
+
+    name 由 agent 自由命名；purpose 声明这组要验证什么假设。
+    """
+    layout = _find_idea_root(idea_id)
+    if status not in domain.GROUP_ALL_STATUS:
+        raise ValueError(f"invalid group status: {status}")
+    cs = CounterStore(DataRoot().counters)
+    seq = cs.bump("grp_seq")
+    gid = f"grp-{seq:03d}"
+    now = domain.utc_now()
+    meta = {
+        "schemaVersion": SCHEMA_VERSION,
+        "id": gid,
+        "ideaId": idea_id,
+        "name": name,
+        "purpose": purpose or "",
+        "status": status,
+        "conclusion": "",
+        "createdAt": now,
+        "updatedAt": now,
+        "deletedAt": None,
+    }
+    atomic_write_json(layout.group_meta(gid), meta)
+    try:
+        from .index import append_event
+        append_event(None, "experiment_group.created",
+                     {"group_id": gid, "idea_id": idea_id, "name": name})
+    except Exception:
+        pass
+    return meta
+
+
+def update_experiment_group(group_id: str, name: str | None = None,
+                            purpose: str | None = None, status: str | None = None,
+                            conclusion: str | None = None) -> dict:
+    """更新实验组：名称 / 验证目的 / 状态 / 组级结论。"""
+    layout = _find_group_root(group_id)
+    meta = read_json(layout.group_meta(group_id)) or {}
+    if not meta:
+        raise KeyError(f"experiment group not found: {group_id}")
+    if status is not None:
+        if status not in domain.GROUP_ALL_STATUS:
+            raise ValueError(f"invalid group status: {status}")
+        meta["status"] = status
+        if status == domain.GROUP_ABANDONED:
+            meta["deletedAt"] = domain.utc_now()
+        elif status == domain.GROUP_PLANNING:
+            meta["deletedAt"] = None
+    if name is not None:
+        meta["name"] = name
+    if purpose is not None:
+        meta["purpose"] = purpose
+    if conclusion is not None:
+        meta["conclusion"] = conclusion
+    meta["updatedAt"] = domain.utc_now()
+    atomic_write_json(layout.group_meta(group_id), meta)
+    try:
+        from .index import append_event
+        append_event(None, "experiment_group.updated",
+                     {"group_id": group_id, "status": meta["status"]})
+    except Exception:
+        pass
+    return meta
+
+
+def list_experiment_groups(idea_id: str | None = None, include_archived: bool = False) -> list[dict]:
+    """列出实验组，可按 Idea 过滤。附带实验数（一次全量查询计数）。"""
+    out = []
+    all_exps = list_experiments(idea_id=idea_id)
+    for _did, layout, _entry in _iter_directions():
+        gdir = layout.research / "groups"
+        if not gdir.exists():
+            continue
+        for meta_path in sorted(gdir.glob("*/meta.json")):
+            meta = read_json(meta_path)
+            if not meta or (not include_archived and meta.get("deletedAt")):
+                continue
+            if idea_id and meta.get("ideaId") != idea_id:
+                continue
+            meta["experiment_count"] = sum(
+                1 for e in all_exps if e.get("groupId") == meta["id"])
+            out.append(meta)
+    return out
+
+
+def get_experiment_group(group_id: str) -> dict:
+    layout = _find_group_root(group_id)
+    meta = read_json(layout.group_meta(group_id))
+    if not meta:
+        raise KeyError(f"experiment group not found: {group_id}")
+    meta["experiment_count"] = sum(
+        1 for e in list_experiments(idea_id=meta.get("ideaId"))
+        if e.get("groupId") == group_id)
+    return meta
+
+
 # ---------------------------------------------------------------- Experiment（params 键值，字段不写死）
 
 def create_experiment(version_id: str, params: dict[str, Any] | None = None,
                       name: str | None = None, description: str | None = None,
-                      created_by: str = "agent", git_ref: str | None = None) -> dict:
+                      created_by: str = "agent", git_ref: str | None = None,
+                      group_id: str | None = None) -> dict:
     layout = _find_version_root(version_id)
     # 实验 id 用全局计数器（跨方向唯一），避免 _find_exp_root 跨方向歧义
     cs = CounterStore(DataRoot().counters)
@@ -307,10 +416,13 @@ def create_experiment(version_id: str, params: dict[str, Any] | None = None,
     if not git_ref:
         vm = read_json(layout.version_meta(version_id)) or {}
         git_ref = vm.get("gitRef") or vm.get("fullGitRef")
+    if group_id:
+        _find_group_root(group_id)  # 校验实验组存在
     meta = {
         "schemaVersion": SCHEMA_VERSION,
         "id": eid,
         "versionId": version_id,
+        "groupId": group_id,
         "name": name or f"run-{seq:03d}",
         "description": description or "",
         "status": domain.STATUS_PENDING,
@@ -328,7 +440,7 @@ def create_experiment(version_id: str, params: dict[str, Any] | None = None,
         "state": domain.STATUS_PENDING,
         "history": [{"state": domain.STATUS_PENDING, "at": now, "by": created_by}],
     })
-    # 执行记录事件（Agent 执行记录视图）
+    # 执行记录事件（索引是缓存，写失败不阻断主流程）
     try:
         from .index import append_event
         append_event(None, "experiment.created",
@@ -603,7 +715,7 @@ def reject_proposal(proposal_id: str, reason: str | None = None) -> dict:
 def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dict:
     """受限软删除 / 恢复：置 `deletedAt`（数据保留、查询默认过滤、可恢复）。
 
-    entity_type ∈ {direction, paper, idea, version, experiment}。
+    entity_type ∈ {direction, paper, idea, version, experiment, group}。
     物理清理不在 agent 权限内（只留给 UI/REST 的显式 prune）。
     """
     now = domain.utc_now()
@@ -621,6 +733,9 @@ def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dic
     elif entity_type == "experiment":
         layout = _find_exp_root(entity_id)
         path = layout.exp_meta(entity_id)
+    elif entity_type == "group":
+        layout = _find_group_root(entity_id)
+        path = layout.group_meta(entity_id)
     elif entity_type == "direction":
         dr = DataRoot()
         reg = read_json(dr.directions_file, {}) or {}

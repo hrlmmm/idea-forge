@@ -19,7 +19,7 @@
 
 **[🔴] `results.json` 格式自相矛盾** | §4.5 定义 `{metricSchema, metrics}`，而 §13 与 `create_experiment` 返回示例的 `results_file_convention` 是 `{params, metrics}`。Watcher 与 agent 回写按哪套格式解析？两套并存会直接导致回收失败或丢 params。 | 统一为 `{params?: object, metrics: object, metricSchema?: object}`（params 冗余一份进 results 便于脚本自包含，config.json 仍为真相）；在 §4.5 与 §13 两处同步改，并加 schema 校验测试锁定格式。
 
-**[🔴] `analysis` 的 `is_read`（未读数）没有真相归属** | `mark_read` 工具存在，但索引表 `analyses` 无 `is_read` 列；若放 index.db 则 rebuild 即丢未读状态（违反"重建不丢用户数据"承诺），若写进 agent 生成的 `.md` front-matter 则污染"analysis 由 agent 写"的真相语义。产品收件箱"未读分析(n)"依赖它。 | 在 `.research/experiments/<exp_id>/analyses/<analysis_id>.meta.json` 放独立小文件（`{isRead, readAt, updatedBy}`），不进 md、不进索引；rebuild 重扫该目录不丢。
+**[🔴] `analysis` 的 `is_read`（未读数）没有真相归属** | `mark_read` 工具存在，但索引表 `analyses` 无 `is_read` 列；若放 index.db 则 rebuild 即丢未读状态（违反"重建不丢用户数据"承诺），若写进 agent 生成的 `.md` front-matter 则污染"analysis 由 agent 写"的真相语义。今日动态的"未读分析(n)"依赖它。 | 在 `.research/experiments/<exp_id>/analyses/<analysis_id>.meta.json` 放独立小文件（`{isRead, readAt, updatedBy}`），不进 md、不进索引；rebuild 重扫该目录不丢。
 
 **[🔴] `meta.status` 与 `status.json.state` 双状态源** | meta.json 存 `status`，status.json 存 `state`+`history`。Watcher"独立原子追加 status.json"，但谁同步 meta.status？若 Watcher 只写 status.json，meta.status 落后导致矩阵/筛选读错；双写则"独立追加"优势丧失。方案未定义同步规则与失败处理。 | 定 status.json 为唯一状态真相（含 history），meta.status 改为派生缓存字段（rebuild/读时回填），所有状态迁移走同一 Storage 方法（内部先锁 status.json 读改写，再更新 meta）。
 
@@ -31,7 +31,7 @@
 
 **[🟠] `derivedIdeaIds` 与 `relatedPaperIds` 是跨 root 双向冗余，无一致性机制** | 文献在 `<data_root>`，Idea 在 `<direction_root>`，两文件互为反向索引；创建/删除 Idea 时任一写失败即永久不一致，且不在索引里（重建救不回来）。 | 引入"反向引用补偿队列"：创建 Idea 后异步补写 `derivedIdeaIds`（写失败进 `data_root/pending_refs.json`，下次启动重放）；或退化为查询时实时推导（`idea_papers` 索引表已能算，JSON 里仅存缓存）。
 
-**[🟠] 乐观锁未落地到 MCP 工具层** | §6 声称"写前比对 `expectedUpdatedAt` 返回 409"，但 §9 全部 24 个工具入参 schema 均无 `expected_updated_at`，agent 无法使用乐观锁；多 agent + Watcher 同时迁移状态时只能靠"最后写入胜出"，与方案声明不符。 | 在 `update_experiment_status`、`set_metrics`、`update_paper`、`update_idea_status` 增加可选 `expected_updated_at`；终态重复迁移改为幂等返回当前状态（不报 409），避免 agent 误判。
+**[🟠] 乐观锁未落地到 MCP 工具层** | §6 声称"写前比对 `expectedUpdatedAt` 返回 409"，但 §9 全部 24 个工具入参 schema 均无 `expected_updated_at`，agent 无法使用乐观锁；多 agent + Watcher 同时迁移状态时只能靠"最后写入胜出"，与方案声明不符。 | 在 `update_experiment_status`、`set_metrics`、`update_paper`、`update_idea_status` 增加可选 `expected_updated_at`；终态重复迁移改为幂等返回当前状态（不报 409），避免 agent 误判。（实现落地：§9 工具已增至 31 个，乐观锁已加入 `update_paper` / `update_idea_status` / `update_experiment_status` / `set_metrics` / `link_paper_to_idea` / `mark_read` 等受限变更工具。）
 
 **[🟠] MCP 缺 proposals 查询工具，agent 闭环断环** | `propose_experiment` 创建提议后，agent 无法查询提议被批准/拒绝——人批准后 agent 不知道何时该 `create_experiment`，§13 步骤 5 的循环在"人等批准"处断掉（REST 有 `GET /proposals`，MCP 没有）。 | 补 `list_proposals`（`{status?: "pending"|"approved"|"rejected", direction_id?, since?}`）与 `get_proposal` 两个只读工具；`propose_experiment` 返回的 `proposal_id` 即轮询句柄。
 

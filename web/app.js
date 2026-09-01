@@ -10,6 +10,7 @@ const state = {
   expId: null,
   eventSeq: 0,
   experiments: [],
+  groups: [],
   ideas: [],
   directions: [],
   versions: [],
@@ -59,8 +60,10 @@ async function loadAll() {
     if (!state.ideaId || !state.ideas.some((i) => i.id === state.ideaId)) {
       state.ideaId = state.ideas[0] ? state.ideas[0].id : null;
     }
+    const g = await API.get(`/experiment-groups?idea_id=${state.ideaId || ""}`).catch(() => ({ groups: [] }));
+    state.groups = g.groups || [];
   } else {
-    state.ideas = state.experiments = state.versions = state.papers = [];
+    state.ideas = state.experiments = state.versions = state.papers = state.groups = [];
   }
   const p = await API.get("/proposals").catch(() => ({ proposals: [] }));
   state.proposals = p.proposals || [];
@@ -80,7 +83,6 @@ function render() {
   else if (r === "ideas") c.innerHTML = vIdeas();
   else if (r === "experiments") c.innerHTML = vExperiments();
   else if (r === "exp-detail") c.innerHTML = vExpDetail();
-  else if (r === "agent-log") c.innerHTML = vAgentLog();
   else c.innerHTML = vToday();
   bindView();
 }
@@ -93,7 +95,7 @@ function renderCrumb() {
     const idea = state.ideas.find((i) => i.id === state.ideaId);
     crumb.innerHTML = `<span style="font-weight:600">${esc(d)}</span><span class="sep">/</span><span style="cursor:pointer" data-go="experiments">${esc(idea ? idea.name : "")}</span><span class="sep">/</span><span class="mono">${esc(e ? e.id : "")}</span>`;
   } else {
-    const names = { today: "今日动态", literature: "文献库", ideas: "Idea 分支树", experiments: "实验总览", "agent-log": "Agent 执行记录" };
+    const names = { today: "今日动态", literature: "文献库", ideas: "Idea 分支树", experiments: "实验总览" };
     crumb.innerHTML = `<span style="font-weight:600">${esc(d)}</span><span class="sep">/</span><span class="cur">${names[state.route] || ""}</span>`;
   }
 }
@@ -250,37 +252,56 @@ function vIdeas() {
   </div>`;
 }
 
-// ---------------------------------------------------------------- 视图：实验总览（按版本分组的紧凑表）
+// ---------------------------------------------------------------- 视图：实验总览（先按实验组，再按版本）
 function vExperiments() {
   if (!state.ideas.length) return `<div class="view"><div class="empty"><div class="ic">∅</div><div class="t">这个方向还没有 Idea</div></div></div>`;
   const idea = state.ideas.find((i) => i.id === state.ideaId) || state.ideas[0];
   const versions = state.versions.filter((v) => v.ideaId === idea.id);
   const exps = state.experiments.filter((e) => versions.some((v) => v.id === e.versionId));
-  const rows = versions.map((v) => {
-    const ve = exps.filter((e) => e.versionId === v.id);
-    const list = ve.map((e) => `
-      <tr style="cursor:pointer" data-open-exp="${e.id}">
-        <td class="mono" style="font-size:var(--fs-sm)">${esc(e.id)}</td>
-        <td>${esc(e.name)}${e.description ? `<div style="font-size:var(--fs-xs);color:var(--neutral-500);margin-top:2px">${esc(e.description)}</div>` : ""}</td>
-        <td><span class="status-badge ${e.status === "done" ? "sb-done" : e.status === "failed" ? "sb-failed" : e.status === "running" ? "sb-running" : "sb-pending"}"><span class="dot"></span>${e.status === "done" ? "完成" : e.status === "failed" ? "失败" : e.status === "running" ? "运行中" : "待运行"}</span></td>
-        <td class="mono" style="font-size:var(--fs-xs);color:var(--accent-500)">#${esc(e.gitRef || v.gitRef || "")}</td>
-        <td style="font-size:var(--fs-xs);color:var(--neutral-400)">${fmtDate(e.createdAt)}</td>
-      </tr>`).join("");
+
+  const expRows = (ve) => ve.map((e) => `
+    <tr style="cursor:pointer" data-open-exp="${e.id}">
+      <td class="mono" style="font-size:var(--fs-sm)">${esc(e.id)}</td>
+      <td>${esc(e.name)}${e.description ? `<div style="font-size:var(--fs-xs);color:var(--neutral-500);margin-top:2px">${esc(e.description)}</div>` : ""}</td>
+      <td><span class="status-badge ${e.status === "done" ? "sb-done" : e.status === "failed" ? "sb-failed" : e.status === "running" ? "sb-running" : "sb-pending"}"><span class="dot"></span>${e.status === "done" ? "完成" : e.status === "failed" ? "失败" : e.status === "running" ? "运行中" : "待运行"}</span></td>
+      <td class="mono" style="font-size:var(--fs-xs);color:var(--accent-500)">#${esc(e.gitRef || "")}</td>
+      <td style="font-size:var(--fs-xs);color:var(--neutral-400)">${fmtDate(e.createdAt)}</td>
+    </tr>`).join("");
+
+  const groupCard = (g) => {
+    const ve = exps.filter((e) => e.groupId === g.id);
+    const gcls = g.status === "done" ? "sb-done" : g.status === "abandoned" ? "sb-failed" : g.status === "active" ? "sb-running" : "sb-pending";
+    const glabel = g.status === "done" ? "已完成" : g.status === "abandoned" ? "已放弃" : g.status === "active" ? "进行中" : "规划中";
     return `<div class="card" style="margin-bottom:var(--sp-3)">
       <div style="padding:var(--sp-3) var(--sp-4);display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border-subtle)">
-        <span class="mono" style="font-weight:600;color:var(--neutral-800)">${esc(v.name)}</span>
-        <span class="mono" style="font-size:10px;color:var(--neutral-400)">#${esc(v.gitRef || "")}</span>
-        <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-500)">${ve.length} 个实验</span>
+        <span style="font-weight:600;color:var(--neutral-800)">${esc(g.name)}</span>
+        <span class="status-badge ${gcls}"><span class="dot"></span>${glabel}</span>
+        <span class="mono" style="font-size:10px;color:var(--neutral-400)">${esc(g.id)}</span>
+        <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-500)">${g.experiment_count ?? ve.length} 个实验</span>
       </div>
-      <table class="tbl"><thead><tr><th>实验</th><th>名称</th><th>状态</th><th>代码 commit</th><th>创建</th></tr></thead><tbody>${list || `<tr><td colspan="5" style="color:var(--neutral-400)">还没有实验</td></tr>`}</tbody></table>
+      ${g.purpose ? `<div style="padding:var(--sp-2) var(--sp-4);font-size:var(--fs-xs);color:var(--neutral-500);border-bottom:1px solid var(--border-subtle);background:var(--bg-secondary)">验证目的：${esc(g.purpose)}</div>` : ""}
+      ${g.conclusion ? `<div style="padding:var(--sp-2) var(--sp-4);font-size:var(--fs-xs);color:var(--success-700);border-bottom:1px solid var(--border-subtle)">结论：${esc(g.conclusion)}</div>` : ""}
+      <table class="tbl"><thead><tr><th>实验</th><th>名称</th><th>状态</th><th>代码 commit</th><th>创建</th></tr></thead><tbody>${expRows(ve) || `<tr><td colspan="5" style="color:var(--neutral-400)">还没有实验</td></tr>`}</tbody></table>
     </div>`;
-  }).join("");
+  };
+
+  const groupRows = state.groups.map(groupCard).join("");
+  const ungrouped = exps.filter((e) => !e.groupId);
+  const ungroupedCard = ungrouped.length ? `<div class="card" style="margin-bottom:var(--sp-3)">
+    <div style="padding:var(--sp-3) var(--sp-4);display:flex;align-items:center;border-bottom:1px solid var(--border-subtle)">
+      <span style="font-weight:600;color:var(--neutral-400)">未分组</span>
+      <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--neutral-400)">${ungrouped.length} 个实验</span>
+    </div>
+    <table class="tbl"><tbody>${expRows(ungrouped)}</tbody></table>
+  </div>` : "";
+
   const switchIdeas = state.ideas.map((i) => `<button class="${i.id === idea.id ? "on" : ""}" data-idea-sel="${i.id}">${esc(i.name)}</button>`).join("");
   return `<div class="view">
     <div class="page-title">实验总览</div>
     <div class="seg" style="margin-bottom:var(--sp-3);flex-wrap:wrap">${switchIdeas}</div>
-    ${rows}
-    <div style="font-size:var(--fs-xs);color:var(--neutral-400)">共 ${exps.length} 个实验 · 点击行查看详情</div>
+    ${groupRows || `<div class="empty" style="padding:var(--sp-5)"><div class="ic">▤</div><div class="t">还没有实验组</div><div style="font-size:var(--fs-sm);color:var(--neutral-400)">让 agent 用 create_experiment_group 建组（如可行性验证 / 正式对比 / 消融），再把实验挂进组里</div></div>`}
+    ${ungroupedCard}
+    <div style="font-size:var(--fs-xs);color:var(--neutral-400)">共 ${exps.length} 个实验 · 一组实验对应一个验证目的 · 点击行查看详情</div>
   </div>`;
 }
 
@@ -330,40 +351,6 @@ function vExpDetail() {
   return h;
 }
 
-// ---------------------------------------------------------------- 视图：Agent 执行记录（活动日志）
-function vAgentLog() {
-  return `<div class="view">
-    <div class="page-title">Agent 执行记录</div>
-    <div class="permission-bar">Agent 最近的操作：创建/完成实验、写入指标、写分析、提交提议（是否继续由你在对话中拍板）。</div>
-    <div class="card" id="agent-log-list" style="padding:0 var(--sp-4)"><div style="color:var(--neutral-400);padding:20px 0">加载…</div></div>
-  </div>`;
-}
-
-function renderAgentLog() {
-  const box = $("#agent-log-list");
-  if (!box) return;
-  API.get("/events/log?limit=50").then((r) => {
-    const items = (r.events || []).map((ev) => {
-      const d = ev.data || {};
-      let txt = `<span class="mono" style="color:var(--neutral-400)">${esc(ev.type)}</span>`;
-      if (ev.type === "experiment.created") txt = `创建实验 <b>${esc(d.experiment_id)}</b>（${esc(d.name || "")}）`;
-      else if (ev.type === "experiment.finished") txt = `完成实验 <b>${esc(d.experiment_id)}</b>（${d.status === "failed" ? "失败" : "成功"}）`;
-      else if (ev.type === "metrics.set") txt = `写入指标（${d.count} 项）→ <b>${esc(d.experiment_id)}</b>`;
-      else if (ev.type === "analysis.created") txt = `写入分析 → <b>${esc(d.experiment_id)}</b>`;
-      else if (ev.type === "proposal.created") txt = `提交提议：${esc(d.title || "")}`;
-      else if (ev.type === "proposal.approved") txt = `批准提议 → 创建 <b>${esc(d.experiment_id)}</b>`;
-      else if (ev.type === "proposal.rejected") txt = `拒绝提议${d.reason ? `（${esc(d.reason)}）` : ""}`;
-      const time = ev.ts ? ev.ts.replace("T", " ").slice(5, 19) + "Z" : "";
-      return `<div style="display:flex;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--border-subtle);font-size:var(--fs-sm)">
-        <span class="source-badge src-agent">🤖</span>
-        <span style="flex:1">${txt}</span>
-        <span style="font-size:10px;color:var(--neutral-400);font-family:var(--font-mono);white-space:nowrap">${time}</span>
-      </div>`;
-    }).join("");
-    box.innerHTML = items || '<div class="empty" style="padding:30px 0"><div class="ic">∅</div><div class="t">还没有执行记录</div></div>';
-  }).catch(() => { box.innerHTML = '<div style="color:var(--neutral-400);padding:20px 0">加载失败</div>'; });
-}
-
 // ---------------------------------------------------------------- 绑定
 function bindView() {
   $$(".sb-item[data-route]").forEach((e) => e.onclick = () => { state.route = e.dataset.route; render(); });
@@ -374,7 +361,6 @@ function bindView() {
   $$("[data-go]").forEach((e) => e.onclick = () => { state.route = e.dataset.go; render(); });
   $$(".dir-opt").forEach((e) => e.onclick = () => { state.directionId = e.dataset.dir; state.ideaId = null; render(); });
   $("#dir-switch").onclick = (ev) => { ev.stopPropagation(); const m = $("#dir-menu"); m.style.display = m.style.display === "block" ? "none" : "block"; };
-  if (state.route === "agent-log") renderAgentLog();
   if (state.route === "exp-detail") {
     // 返回上一级
     $$("#crumb [data-go]").forEach((b) => b.onclick = () => { state.route = "experiments"; render(); });

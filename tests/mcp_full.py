@@ -1,4 +1,4 @@
-"""全量 MCP 工具测试：官方 mcp 客户端走 stdio，逐工具调用 25 个工具 + 权限拒绝场景。
+"""全量 MCP 工具测试：官方 mcp 客户端走 stdio，逐工具调用 32 个工具 + 权限拒绝场景。
 
 运行（venv，含 mcp 依赖）：
   D:/idea-forge/.venv/Scripts/python.exe tests/mcp_full.py
@@ -51,7 +51,7 @@ async def main() -> int:
             await session.initialize()
             tools = await session.list_tools()
             names = sorted(t.name for t in tools.tools)
-            check("28 个工具", len(names) == 28, f"实际 {len(names)}")
+            check("31 个工具", len(names) == 31, f"实际 {len(names)}")
 
             async def call(name, args):
                 res = await session.call_tool(name, args)
@@ -107,6 +107,23 @@ async def main() -> int:
             t = await call("get_experiment", {"experiment_id": exp["id"]})
             check("get_experiment", '"spread"' in t)
 
+            # ---- E2. Experiment Group（实验线）
+            t = await call("create_experiment_group", {"idea_id": idea["id"], "name": "feasibility", "purpose": "小数据验证可行性"})
+            check("create_experiment_group", '"group_id"' in t)
+            try:
+                gid = json.loads(t)["data"]["group_id"]
+            except Exception:
+                gid = None
+            if gid:
+                t = await call("list_experiment_groups", {"idea_id": idea["id"]})
+                check("list_experiment_groups", gid in t)
+                t = await call("create_experiment", {"version_id": ver["id"], "params": {"lr": 0.03}, "name": "e3", "group_id": gid})
+                check("create_experiment 挂组", gid in t)
+                t = await call("update_experiment_group", {"group_id": gid, "status": "done", "conclusion": "方向可行"})
+                check("update_experiment_group", '"done"' in t)
+            else:
+                check("list_experiment_groups", False, "group_id 未解析")
+
             # ---- F. Analysis
             t = await call("write_analysis", {"experiment_id": exp["id"], "content": "lr 提升后 spread 上升", "references": ["spread"]})
             check("write_analysis", '"analysis_id"' in t)
@@ -157,8 +174,8 @@ async def main() -> int:
             t = await call("reject_proposal", {"proposal_id": pid3, "reason": "lr 过高"})
             check("reject_proposal", '"rejected"' in t)
 
-    passed = 28 - len(FAILED)
-    print(f"\n=== 通过 {passed}/28，失败 {len(FAILED)}: {FAILED} ===")
+    passed = 31 - len(FAILED)
+    print(f"\n=== 通过 {passed}/31，失败 {len(FAILED)}: {FAILED} ===")
     return 1 if FAILED else 0
 
 

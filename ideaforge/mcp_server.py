@@ -1,6 +1,6 @@
 """Idea Forge MCP server（官方 mcp SDK + FastMCP，v0.1 仅 stdio）。
 
-对齐 docs/technical-plan.md §9-§10：25 个工具分 7 类；
+对齐 docs/technical-plan.md §9-§10：32 个工具分 8 类（含实验组）；
 - 返回信封 {ok, context:{direction_id, ts}, data}
 - params/metrics 一律 dict 透传，不校验具体键名
 - 权限：只读 / 只写新建 / 受限变更；无 delete、无执行代码
@@ -198,14 +198,16 @@ def list_versions(idea_id: str | None = None, limit: int = 100) -> dict:
 def create_experiment(version_id: str, params: dict[str, Any], name: str | None = None,
                       description: str | None = None,
                       metric_schema: list[dict] | None = None,
-                      status: str = "pending") -> dict:
+                      status: str = "pending",
+                      group_id: str | None = None) -> dict:
     """新建实验（params 键值透传）。返回建议运行命令与结果文件约定。
 
     description：一句话说明这次实验想验证什么（agent 应尽量生成）；
-    git commit 默认继承该 Version 的 commit（代码关联）。
+    git commit 默认继承该 Version 的 commit（代码关联）；
+    group_id：可选，把实验挂到某个实验组（实验线）下。
     """
     meta = service.create_experiment(version_id, params, name, description,
-                                     created_by="agent")
+                                     created_by="agent", group_id=group_id)
     layout = _locate_exp(meta["id"])
     results_file = str(layout.exp_results(meta["id"]))
     return _data({
@@ -213,6 +215,7 @@ def create_experiment(version_id: str, params: dict[str, Any], name: str | None 
         "description": meta.get("description") or "",
         "version_id": version_id, "status": meta["status"], "params": params,
         "git_ref": meta.get("gitRef"),
+        "group_id": meta.get("groupId"),
         "metric_schema": metric_schema or [],
         "suggested_command": (
             f"python train.py && python -m ideaforge.cli finalize "
@@ -221,6 +224,39 @@ def create_experiment(version_id: str, params: dict[str, Any], name: str | None 
             f"results.json = {{\"metrics\": {{...}}, \"metricSchema\": {{...}}}} "
             f"@ {results_file}"),
         "created_at": meta["createdAt"]})
+
+
+@mcp.tool()
+def create_experiment_group(idea_id: str, name: str, purpose: str | None = None,
+                            status: str = "planning") -> dict:
+    """在 Idea 下新建实验组（实验线）。一组实验对应一个验证目的，
+    如 feasibility（小数据可行性验证）/ main（正式对比）/ ablation（消融）。
+    """
+    g = service.create_experiment_group(idea_id, name, purpose, status)
+    return _data({"group_id": g["id"], "idea_id": idea_id, "name": g["name"],
+                  "purpose": g.get("purpose") or "", "status": g["status"],
+                  "created_at": g["createdAt"]})
+
+
+@mcp.tool()
+def update_experiment_group(group_id: str, name: str | None = None,
+                            purpose: str | None = None,
+                            status: str | None = None,
+                            conclusion: str | None = None) -> dict:
+    """更新实验组：名称 / 验证目的 / 状态（planning|active|done|abandoned）/ 组级结论。
+    abandoned 会软删除（数据保留可恢复）。
+    """
+    g = service.update_experiment_group(group_id, name, purpose, status, conclusion)
+    return _data({"group_id": group_id, "name": g["name"],
+                  "status": g["status"], "updated_at": g["updatedAt"]})
+
+
+@mcp.tool()
+def list_experiment_groups(idea_id: str | None = None,
+                           include_archived: bool = False) -> dict:
+    """列出实验组（可按 Idea 过滤），附每组实验数。"""
+    groups = service.list_experiment_groups(idea_id, include_archived)
+    return _data({"groups": groups, "total": len(groups)})
 
 
 @mcp.tool()
