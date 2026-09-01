@@ -60,6 +60,22 @@ GROUP_ALL_STATUS = {GROUP_PLANNING, GROUP_ACTIVE, GROUP_DONE, GROUP_ABANDONED}
 PAPER_WRITABLE_FIELDS = {"title", "authors", "year", "venue", "tags",
                          "directions", "notes", "readState"}
 
+
+# ---------------------------------------------------------------- Claim（结论）状态（证据门 Evidence Gate）
+
+CLAIM_SPECULATION = "speculation"   # 无证据：只是猜测，不能当结论
+CLAIM_SUPPORTED = "supported"       # 有证据支撑：可当结论
+CLAIM_REFUTED = "refuted"           # 被证据否定
+CLAIM_ALL_STATUS = {CLAIM_SPECULATION, CLAIM_SUPPORTED, CLAIM_REFUTED}
+
+
+# ---------------------------------------------------------------- Skill（可版本化、可传授的协议本体）
+
+SKILL_DRAFT = "draft"
+SKILL_STABLE = "stable"
+SKILL_DEPRECATED = "deprecated"
+SKILL_ALL_STATUS = {SKILL_DRAFT, SKILL_STABLE, SKILL_DEPRECATED}
+
 # ---------------------------------------------------------------- 变体族 repeat 键（product-design §5.1）
 
 REPEAT_KEY_RE = re.compile(r"^(.*_)?(seed|random_seed|repeat|run_id|trial|idx)$", re.I)

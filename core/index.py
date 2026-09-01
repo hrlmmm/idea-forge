@@ -46,13 +46,21 @@ CREATE TABLE IF NOT EXISTS proposals(
   proposed_params_json TEXT, based_on_experiment_ids_json TEXT, confidence REAL,
   status TEXT, created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS claims(
+  claim_id TEXT PRIMARY KEY, idea_id TEXT, group_id TEXT, statement TEXT,
+  confidence TEXT, evidence_json TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS skills(
+  skill_id TEXT PRIMARY KEY, name TEXT, version INTEGER, status TEXT,
+  direction_id TEXT, tags_json TEXT, created_at TEXT, updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS events(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, data_json TEXT, ts TEXT
 );
 """
 
 _ALL_TABLES = ["directions", "papers", "ideas", "idea_papers", "versions",
-               "experiments", "kv", "proposals", "events"]
+               "experiments", "kv", "proposals", "claims", "skills", "events"]
 
 
 class Index:
@@ -86,6 +94,8 @@ class Index:
                  entry.get("git_remote"), entry.get("createdAt")))
             count += self._index_direction(con, DirectionLayout(entry["root_path"]), did)
         self._index_papers(con)
+        self._index_claims(con)
+        self._index_skills(con)
         con.commit()
         return count
 
@@ -155,6 +165,56 @@ class Index:
                  p.get("readState"),
                  json.dumps(p.get("derivedIdeaIds") or [], ensure_ascii=False),
                  p.get("createdAt")))
+
+    def _index_claims(self, con) -> None:
+        """索引所有方向的 claims（结论）。"""
+        for _did, layout, _entry in self._iter_layouts():
+            cdir = layout.research / "claims"
+            if not cdir.exists():
+                continue
+            for meta_path in cdir.glob("*/meta.json"):
+                c = read_json(meta_path)
+                if not c or c.get("deletedAt"):
+                    continue
+                con.execute(
+                    "INSERT OR REPLACE INTO claims VALUES (?,?,?,?,?,?,?,?)",
+                    (c["id"], c.get("ideaId"), c.get("groupId"), c.get("statement"),
+                     c.get("confidence"), json.dumps(c.get("evidence") or [], ensure_ascii=False),
+                     c.get("createdAt"), c.get("updatedAt")))
+
+    def _index_skills(self, con) -> None:
+        """索引方向级 + 全局 skills（可复用技能）。"""
+        for _did, layout, _entry in self._iter_layouts():
+            sdir = layout.research / "skills"
+            if not sdir.exists():
+                continue
+            for meta_path in sdir.glob("*/meta.json"):
+                s = read_json(meta_path)
+                if not s or s.get("deletedAt"):
+                    continue
+                self._insert_skill(con, s)
+        # 全局 skills
+        gdir = self.dr.root / "skills"
+        if gdir.exists():
+            for meta_path in gdir.glob("*/meta.json"):
+                s = read_json(meta_path)
+                if not s or s.get("deletedAt"):
+                    continue
+                self._insert_skill(con, s)
+
+    def _insert_skill(self, con, s: dict) -> None:
+        con.execute(
+            "INSERT OR REPLACE INTO skills VALUES (?,?,?,?,?,?,?,?)",
+            (s["id"], s.get("name"), s.get("version", 1), s.get("status"),
+             s.get("directionId"), json.dumps(s.get("tags") or [], ensure_ascii=False),
+             s.get("createdAt"), s.get("updatedAt")))
+
+    def _iter_layouts(self):
+        reg = read_json(self.dr.directions_file, {}) or {}
+        for did, entry in reg.items():
+            if entry.get("deletedAt"):
+                continue
+            yield did, DirectionLayout(entry["root_path"]), entry
 
     # ------------------------------------------------------------ 查询
 

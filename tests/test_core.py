@@ -197,3 +197,110 @@ def test_soft_delete_and_restore(tmp_path):
     import pytest
     with pytest.raises(ValueError):
         service.mark_deleted("unknown", "x")
+
+
+def test_claim_evidence_gate(tmp_path):
+    """结论 + 证据门：supported 必须挂 evidence，无证据只能 speculation。"""
+    repo = _setup(tmp_path)
+    d = service.create_direction("IM", repo)
+    idea = service.create_idea(d["direction_id"], "两阶段框架")
+    ver = service.create_version(idea["id"], commit="abc")
+    exp = service.create_experiment(ver["id"], {"p": 0.01})
+    eid = exp["id"]
+
+    # 无证据时标 supported → 拒绝
+    with pytest.raises(ValueError):
+        service.create_claim(idea_id=idea["id"], statement="两阶段成立",
+                             confidence="supported", evidence=[])
+
+    # 无证据 → speculation 允许
+    c1 = service.create_claim(idea_id=idea["id"], statement="粗排召回可能够高",
+                              confidence="speculation")
+    assert c1["confidence"] == "speculation"
+    assert c1["id"].startswith("clm-")
+
+    # 挂证据 → supported 允许
+    c2 = service.create_claim(idea_id=idea["id"], statement="召回率 0.85 ≥ 0.8，两阶段成立",
+                              confidence="supported", evidence=[eid])
+    assert c2["confidence"] == "supported"
+    assert c2["evidence"] == [eid]
+    assert c2["missingEvidence"] == []
+
+    # 引用不存在的实验 → 记录 missingEvidence
+    c3 = service.create_claim(idea_id=idea["id"], statement="xxx",
+                              confidence="supported", evidence=["exp-999"])
+    assert c3["missingEvidence"] == ["exp-999"]
+
+    # 列表过滤
+    supported = service.list_claims(idea_id=idea["id"], confidence="supported")
+    assert len(supported) == 2
+
+    # 升级 speculation → supported 但缺证据 → 拒绝
+    with pytest.raises(ValueError):
+        service.update_claim(c1["id"], confidence="supported")
+
+    # 补证据后升级成功
+    up = service.update_claim(c1["id"], confidence="supported", evidence=[eid])
+    assert up["confidence"] == "supported"
+
+
+def test_skill_roundtrip_and_versioning(tmp_path):
+    """Skill：沉淀 → 版本自增 → 实验 attach → 列表过滤。"""
+    repo = _setup(tmp_path)
+    d = service.create_direction("IM", repo)
+    idea = service.create_idea(d["direction_id"], "两阶段框架")
+    ver = service.create_version(idea["id"], commit="abc")
+
+    s = service.create_skill("召回率验证", description="跑粗排召回率实验",
+                             body="# 步骤\n1. 算真 Top-K\n2. 跑粗排",
+                             direction_id=d["direction_id"],
+                             evidence_expectations=["recall >= 0.8"])
+    sid = s["id"]
+    assert sid.startswith("skl-")
+    assert s["version"] == 1
+    assert s["status"] == "draft"
+
+    # body 落盘
+    got = service.get_skill(sid)
+    assert "步骤" in got["body"]
+    assert got["evidenceExpectations"] == ["recall >= 0.8"]
+
+    # 更新 → version 自增
+    s2 = service.update_skill(sid, body="# v2", status="stable")
+    assert s2["version"] == 2
+    assert s2["status"] == "stable"
+
+    # 实验 attach skill
+    exp = service.create_experiment(ver["id"], {"p": 0.01}, skill_ids=[sid])
+    assert service.get_experiment(exp["id"])["skillIds"] == [sid]
+
+    # 列表
+    assert any(x["id"] == sid for x in service.list_skills())
+    assert any(x["id"] == sid for x in service.list_skills(status="stable"))
+    assert all(x["id"] != sid for x in service.list_skills(status="draft"))
+
+    # 非法状态拒绝
+    with pytest.raises(ValueError):
+        service.update_skill(sid, status="nope")
+
+
+def test_group_depends_on_gate(tmp_path):
+    """实验组阶段依赖（闸门）：阶段2 依赖阶段1，依赖组必须同 idea。"""
+    repo = _setup(tmp_path)
+    d = service.create_direction("IM", repo)
+    idea = service.create_idea(d["direction_id"], "两阶段框架")
+
+    g1 = service.create_experiment_group(idea["id"], "阶段1-召回率",
+                                         "验证两阶段是否成立")
+    g2 = service.create_experiment_group(idea["id"], "阶段2-粗排",
+                                         depends_on=[g1["id"]])
+    assert g2["dependsOn"] == [g1["id"]]
+
+    # 依赖不存在的组 → 拒绝
+    with pytest.raises(ValueError):
+        service.create_experiment_group(idea["id"], "x", depends_on=["grp-999"])
+
+    # 更新依赖
+    service.update_experiment_group(g2["id"], depends_on=[])
+    got = service.get_experiment_group(g2["id"])
+    assert got["dependsOn"] == []

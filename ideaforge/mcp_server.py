@@ -199,15 +199,18 @@ def create_experiment(version_id: str, params: dict[str, Any], name: str | None 
                       description: str | None = None,
                       metric_schema: list[dict] | None = None,
                       status: str = "pending",
-                      group_id: str | None = None) -> dict:
+                      group_id: str | None = None,
+                      skill_ids: list[str] | None = None) -> dict:
     """新建实验（params 键值透传）。返回建议运行命令与结果文件约定。
 
     description：一句话说明这次实验想验证什么（agent 应尽量生成）；
     git commit 默认继承该 Version 的 commit（代码关联）；
-    group_id：可选，把实验挂到某个实验组（实验线）下。
+    group_id：可选，把实验挂到某个实验组（实验线）下；
+    skill_ids：可选，关联本实验复用了哪些 skill（支持复现）。
     """
     meta = service.create_experiment(version_id, params, name, description,
-                                     created_by="agent", group_id=group_id)
+                                     created_by="agent", group_id=group_id,
+                                     skill_ids=skill_ids)
     layout = _locate_exp(meta["id"])
     results_file = str(layout.exp_results(meta["id"]))
     return _data({
@@ -216,6 +219,7 @@ def create_experiment(version_id: str, params: dict[str, Any], name: str | None 
         "version_id": version_id, "status": meta["status"], "params": params,
         "git_ref": meta.get("gitRef"),
         "group_id": meta.get("groupId"),
+        "skill_ids": meta.get("skillIds") or [],
         "metric_schema": metric_schema or [],
         "suggested_command": (
             f"python train.py && python -m ideaforge.cli finalize "
@@ -228,13 +232,16 @@ def create_experiment(version_id: str, params: dict[str, Any], name: str | None 
 
 @mcp.tool()
 def create_experiment_group(idea_id: str, name: str, purpose: str | None = None,
-                            status: str = "planning") -> dict:
+                            status: str = "planning",
+                            depends_on: list[str] | None = None) -> dict:
     """在 Idea 下新建实验组（实验线）。一组实验对应一个验证目的，
     如 feasibility（小数据可行性验证）/ main（正式对比）/ ablation（消融）。
+    depends_on：声明阶段依赖（闸门），如「阶段2 依赖阶段1 召回率达标」。
     """
-    g = service.create_experiment_group(idea_id, name, purpose, status)
+    g = service.create_experiment_group(idea_id, name, purpose, status, depends_on)
     return _data({"group_id": g["id"], "idea_id": idea_id, "name": g["name"],
                   "purpose": g.get("purpose") or "", "status": g["status"],
+                  "depends_on": g.get("dependsOn") or [],
                   "created_at": g["createdAt"]})
 
 
@@ -242,13 +249,16 @@ def create_experiment_group(idea_id: str, name: str, purpose: str | None = None,
 def update_experiment_group(group_id: str, name: str | None = None,
                             purpose: str | None = None,
                             status: str | None = None,
-                            conclusion: str | None = None) -> dict:
-    """更新实验组：名称 / 验证目的 / 状态（planning|active|done|abandoned）/ 组级结论。
+                            conclusion: str | None = None,
+                            depends_on: list[str] | None = None) -> dict:
+    """更新实验组：名称 / 验证目的 / 状态（planning|active|done|abandoned）/ 组级结论 / 阶段依赖。
     abandoned 会软删除（数据保留可恢复）。
     """
-    g = service.update_experiment_group(group_id, name, purpose, status, conclusion)
+    g = service.update_experiment_group(group_id, name, purpose, status,
+                                        conclusion, depends_on)
     return _data({"group_id": group_id, "name": g["name"],
-                  "status": g["status"], "updated_at": g["updatedAt"]})
+                  "status": g["status"], "depends_on": g.get("dependsOn") or [],
+                  "updated_at": g["updatedAt"]})
 
 
 @mcp.tool()
@@ -422,11 +432,98 @@ def reject_proposal(proposal_id: str, reason: str | None = None) -> dict:
 
 @mcp.tool()
 def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dict:
-    """受限软删除/恢复：对 direction/paper/idea/version/experiment 置 deletedAt。
+    """受限软删除/恢复：对 direction/paper/idea/version/experiment/group/claim/skill 置 deletedAt。
 
     数据保留、查询默认过滤、可 restore 恢复。物理清理不在 agent 权限内（只留给 UI/REST）。
     """
     return _data(service.mark_deleted(entity_type, entity_id, restore))
+
+
+# ================================================================ H. Claim（结论 + 证据门）
+
+@mcp.tool()
+def create_claim(statement: str, idea_id: str | None = None, group_id: str | None = None,
+                 confidence: str = "speculation", evidence: list[str] | None = None,
+                 rationale: str | None = None) -> dict:
+    """沉淀一条结论。证据门规则：supported 必须挂 evidence（实验 id），
+    无证据只能标 speculation（猜测）。idea_id / group_id 至少给一个。
+    """
+    c = service.create_claim(idea_id, group_id, statement, confidence,
+                             evidence, rationale)
+    return _data({"claim_id": c["id"], "confidence": c["confidence"],
+                  "evidence": c.get("evidence") or [],
+                  "missing_evidence": c.get("missingEvidence") or [],
+                  "created_at": c["createdAt"]})
+
+
+@mcp.tool()
+def update_claim(claim_id: str, statement: str | None = None,
+                 confidence: str | None = None, evidence: list[str] | None = None,
+                 rationale: str | None = None) -> dict:
+    """更新结论：升级/降级 confidence、补证据、改陈述。"""
+    c = service.update_claim(claim_id, statement, confidence, evidence, rationale)
+    return _data({"claim_id": claim_id, "confidence": c["confidence"],
+                  "evidence": c.get("evidence") or [],
+                  "updated_at": c["updatedAt"]})
+
+
+@mcp.tool()
+def list_claims(idea_id: str | None = None, group_id: str | None = None,
+                confidence: str | None = None,
+                include_archived: bool = False) -> dict:
+    """列出结论（可按 Idea/实验组/置信度过滤）。"""
+    claims = service.list_claims(idea_id, group_id, confidence, include_archived)
+    return _data({"claims": claims, "total": len(claims)})
+
+
+@mcp.tool()
+def get_claim(claim_id: str) -> dict:
+    """单条结论全字段。"""
+    return _data({"claim": service.get_claim(claim_id)})
+
+
+# ================================================================ I. Skill（可版本化、可传授的协议本体）
+
+@mcp.tool()
+def create_skill(name: str, description: str = "", body: str = "",
+                 direction_id: str | None = None, tags: list[str] | None = None,
+                 params_schema: dict[str, Any] | None = None,
+                 evidence_expectations: list[str] | None = None) -> dict:
+    """沉淀一个可复用技能。body 用 markdown 描述步骤；
+    params_schema 可选输入契约；evidence_expectations 声明应产出哪些证据。
+    direction_id 缺省时存全局（跨方向复用）。
+    """
+    s = service.create_skill(name, description, body, direction_id, tags,
+                             params_schema, evidence_expectations)
+    return _data({"skill_id": s["id"], "version": s["version"],
+                  "name": s["name"], "status": s["status"],
+                  "created_at": s["createdAt"]})
+
+
+@mcp.tool()
+def update_skill(skill_id: str, name: str | None = None, description: str | None = None,
+                 body: str | None = None, status: str | None = None,
+                 tags: list[str] | None = None, params_schema: dict[str, Any] | None = None,
+                 evidence_expectations: list[str] | None = None) -> dict:
+    """更新技能（每次更新 version 自增，可版本化）。"""
+    s = service.update_skill(skill_id, name, description, body, status, tags,
+                             params_schema, evidence_expectations)
+    return _data({"skill_id": skill_id, "version": s["version"],
+                  "status": s["status"], "updated_at": s["updatedAt"]})
+
+
+@mcp.tool()
+def get_skill(skill_id: str) -> dict:
+    """单技能全字段（含 body 正文）。"""
+    return _data({"skill": service.get_skill(skill_id)})
+
+
+@mcp.tool()
+def list_skills(direction_id: str | None = None, status: str | None = None,
+                include_archived: bool = False) -> dict:
+    """列出技能（可按方向/状态过滤）。"""
+    skills = service.list_skills(direction_id, status, include_archived)
+    return _data({"skills": skills, "total": len(skills)})
 
 
 def run(transport: str = "stdio") -> None:

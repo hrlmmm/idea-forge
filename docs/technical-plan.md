@@ -11,16 +11,20 @@
 Direction(研究方向 = 一个 GitHub 仓库 + 一个本地目录)
   → Literature(文献，全局库，directions:[] 支持跨方向共用)
   → Idea(= 该方向仓库的一条 git branch，可分叉，软删除保留记录)
-    → ExperimentGroup(实验组/实验线：一组实验对应一个验证目的，如可行性/对比/消融)
+    → ExperimentGroup(实验组/实验线：一组实验对应一个验证目的，如可行性/对比/消融；可声明阶段依赖 dependsOn = 闸门)
     → Version(= 该分支上的某次 commit)
-      → Experiment(params/metrics 键值，字段名绝不写死，可选归入某个实验组)
+      → Experiment(params/metrics 键值，字段名绝不写死，可选归入某个实验组；可 attach Skill 支持复现)
         → Analysis(agent 或人写回复盘)
+    → Claim(结论：证据门约束，supported 必须挂 evidence，无证据只能 speculation)
+  → Skill(可版本化、可传授的协议本体；direction 级或全局，实验可 attach 以支持复现)
 ```
 
 - 用户可有多个 Direction；每个 Direction 独立本地目录 + 独立 git 仓库 + 独立 `.research/` 元数据。
 - 今日动态是**跨方向**的。
 - 实验状态机 `pending → running → done / failed`，终态写 `finished_at`。
-- 实验组状态机 `planning → active → done / abandoned`（abandoned = 软删除，可恢复）。
+- 实验组状态机 `planning → active → done / abandoned`（abandoned = 软删除，可恢复）；`dependsOn` 表达阶段依赖/闸门。
+- 结论（Claim）状态机 `speculation → supported / refuted`：证据门约束，无 evidence 不能标 supported。
+- 技能（Skill）状态机 `draft → stable / deprecated`；每次 update 版本号自增。
 - 废弃版本/想法软删除：保留轻量元数据，大产物（模型 checkpoint 等）标 `large_artifact` 可 prune。
 - **移动端已砍**：v0.1 纯桌面 Web UI，无响应式适配。
 
@@ -81,10 +85,14 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
 <direction_root>/                     用户工作目录（git repo）
 ├─ .research/
 │  ├─ config.json                     # 方向配置（见 §4.1）
-│  ├─ counters.json                   # 递增计数器：idea_seq / grp_seq / version_seq / exp_seq
+│  ├─ counters.json                   # 递增计数器：idea_seq / grp_seq / version_seq / exp_seq / claim_seq / skill_seq
 │  ├─ ideas/<idea_id>/meta.json
-│  ├─ groups/<group_id>/meta.json     # 实验组（实验线）：归属 Idea、验证目的、状态、结论
+│  ├─ groups/<group_id>/meta.json     # 实验组（实验线）：归属 Idea、验证目的、状态、结论、阶段依赖 dependsOn
 │  ├─ versions/<version_id>/meta.json
+│  ├─ claims/<claim_id>/meta.json     # 结论（证据门）：statement / confidence / evidence
+│  ├─ skills/<skill_id>/              # 技能（可版本化协议本体）：meta.json + skill.md
+│  │  ├─ meta.json
+│  │  └─ skill.md
 │  ├─ experiments/<exp_id>/
 │  │  ├─ meta.json
 │  │  ├─ config.json                  # params 键值
@@ -94,6 +102,8 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
 │  └─ artifacts/                      # 大产物指针记录（不存文件本身）
 └─ …用户自己的科研文件（平台绝不接管）
 ```
+
+**全局 `<data_root>/skills/`**：跨方向复用的技能放这里（`direction_id` 缺省时），方向级技能放 `.research/skills/`。
 
 **index.db 放全局 `<data_root>`**：今日动态 / 执行记录 / 全局搜索跨方向，单库 + `direction_id` 列过滤最省事；方向级查询只是加 WHERE。方向 `.research/` 内不重复建库。
 
@@ -215,6 +225,7 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
   "name": "主对比",
   "purpose": "在 a2 上对比 MAFT vs 3 个基线，验证方法优势",
   "status": "active",
+  "dependsOn": ["grp-000"],
   "conclusion": "",
   "createdAt": "2026-08-31T10:00:00Z",
   "updatedAt": "2026-08-31T10:00:00Z",
@@ -223,9 +234,66 @@ CLI 入口四命令：`ideaforge serve`（拉起 API + 静态托管）、`ideafo
 ```
 
 - `name`/`purpose`/`conclusion` 均为自由文本，由 agent 填充；平台不枚举组类型（schema-flexible，与 params/metrics 同一原则）。
+- `dependsOn`：声明阶段依赖（闸门），如「阶段2 依赖阶段1 召回率达标」；引用的组必须同属一个 Idea，写入时校验存在。
 - 状态机 `planning → active → done / abandoned`；`abandoned` = 软删除（保留 meta 可恢复），实验不 cascade 删除。
 - 实验计数（每组成员数）由查询时从实验索引推导，不落盘，避免双写不一致。
 - 事件：`experiment_group.created` / `experiment_group.updated`。
+
+### 4.5.1 `.research/claims/<claim_id>/meta.json`（结论 + 证据门）
+
+结论（Claim）是"从实验里沉淀出来的判断"，受**证据门（Evidence Gate）**约束：
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "clm-003",
+  "ideaId": "idea-c1a9b2c3",
+  "groupId": "grp-001",
+  "statement": "召回率 0.85 ≥ 0.8，两阶段框架成立",
+  "confidence": "supported",
+  "evidence": ["exp-048", "exp-049"],
+  "rationale": "在 3 张图上粗排 Top-500 罩住 85% 真种子",
+  "missingEvidence": [],
+  "createdAt": "2026-09-01T10:00:00Z",
+  "updatedAt": "2026-09-01T10:00:00Z",
+  "deletedAt": null
+}
+```
+
+- **证据门规则**：`confidence = supported` 必须至少挂 1 条 `evidence`（实验 id）；无 evidence 只能 `speculation`（猜测）；`refuted` 表示被证据否定。
+- `evidence` 引用实验 id，写入时校验存在性，不存在的进 `missingEvidence` 告警（不阻断，可后补）。
+- `statement`/`rationale` 自由文本；挂到 `ideaId` 或 `groupId`（至少一个）。
+- 这是"结论有家"的落地点，也是 claude-scholar Evidence Gate 在平台层的实现。
+
+### 4.5.2 `.research/skills/<skill_id>/`（可版本化协议本体）
+
+Skill 是"agent 把怎么调参、怎么判据固化下来的可复用技能"，是本平台"agent 给 agent 技能"定位的核心实体：
+
+**`meta.json`：**
+```json
+{
+  "schemaVersion": 1,
+  "id": "skl-001",
+  "version": 1,
+  "name": "召回率验证",
+  "description": "跑粗排召回率实验，判据 recall >= 0.8",
+  "status": "draft",
+  "directionId": "dir-01",
+  "tags": ["im", "coarse-ranking"],
+  "paramsSchema": {"p": "float", "k": "int"},
+  "evidenceExpectations": ["recall >= 0.8"],
+  "createdAt": "2026-09-01T10:00:00Z",
+  "updatedAt": "2026-09-01T10:00:00Z",
+  "deletedAt": null
+}
+```
+
+**`skill.md`**：正文，Markdown，agent 直接写步骤。
+
+- 状态机 `draft → stable / deprecated`；每次 `update_skill` `version` 自增（可版本化）。
+- `directionId` 缺省 → 存全局 `<data_root>/skills/`（跨方向复用）；否则存 `.research/skills/`。
+- `paramsSchema` / `evidenceExpectations` 是**可选的结构化契约**：前者声明输入参数，后者声明"照此跑完应产出哪些证据"——这是"协议要结构化才能被可靠执行"的落地点。
+- 实验通过 `create_experiment(skill_ids=[...])` 关联 Skill，支持复现。
 
 ### 4.6 `.research/experiments/<exp_id>/`（四个文件，生命周期各不同）
 
@@ -388,7 +456,7 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 
 ---
 
-## 9. MCP 工具清单（31 个，可直接照此实现）
+## 9. MCP 工具清单（39 个，可直接照此实现）
 
 统一规则：① 所有工具返回信封 `{ok, context:{direction_id, ts}, data}`；② `direction_id` 缺省取进程级"当前方向"（由 `switch_direction` 设置），每个返回都回显 context 防 agent 串方向；③ `params`/`metrics` 一律 `dict[str, any]` 透传，平台只存不校验语义；④ **受限变更工具**（`update_paper` / `update_idea_status` / `update_experiment_status` / `set_metrics` / `link_paper_to_idea` / `mark_read`）入参支持可选 `expected_updated_at?: str`（乐观锁），不匹配返回 `{ok:false, error:"conflict", current_updated_at}`（评审修订）。
 
@@ -426,14 +494,14 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 **E-0. ExperimentGroup（实验线，2026-09-01 新增）**
 | 工具 | 用途 | 入参 schema | 返回 data |
 |---|---|---|---|
-| `create_experiment_group` | 在 Idea 下新建实验组（一条实验线） | `{idea_id: str, name: str, purpose?: str, status?: "planning"\|"active"\|"done"\|"abandoned"="planning"}` | `{group_id,idea_id,name,purpose,status,created_at}` |
-| `update_experiment_group` | 更新组名/目的/状态/结论；置 `abandoned` 即软删除 | `{group_id: str, name?: str, purpose?: str, status?: str, conclusion?: str}` | `{group_id, changed: str[], status, updated_at}` |
-| `list_experiment_groups` | 列出实验组（含每组成员数） | `{idea_id?: str, include_archived?: bool=false}` | `{groups:[{group_id,idea_id,name,purpose,status,conclusion,experiment_count,updated_at}], total}` |
+| `create_experiment_group` | 在 Idea 下新建实验组（一条实验线），可声明阶段依赖 | `{idea_id: str, name: str, purpose?: str, status?: "planning"\|"active"\|"done"\|"abandoned"="planning", depends_on?: str[]}` | `{group_id,idea_id,name,purpose,status,depends_on,created_at}` |
+| `update_experiment_group` | 更新组名/目的/状态/结论/依赖；置 `abandoned` 即软删除 | `{group_id: str, name?: str, purpose?: str, status?: str, conclusion?: str, depends_on?: str[]}` | `{group_id, changed: str[], status, depends_on, updated_at}` |
+| `list_experiment_groups` | 列出实验组（含每组成员数） | `{idea_id?: str, include_archived?: bool=false}` | `{groups:[{group_id,idea_id,name,purpose,status,conclusion,depends_on,experiment_count,updated_at}], total}` |
 
 **E-1. Experiment**
 | 工具 | 用途 | 入参 schema | 返回 data |
 |---|---|---|---|
-| `create_experiment` | 新建实验（可选归入实验组），返回建议运行命令 | `{version_id: str, name?: str, group_id?: str, params: dict[str,any], metric_schema?: [{key:str,type:"number"\|"string"\|"bool",unit?:str,higher_is_better?:bool}], status?: "pending"="pending"}` | `{experiment_id,name,version_id,group_id?,status,params,suggested_command: str,results_file_convention: str,created_at}` |
+| `create_experiment` | 新建实验（可选归入实验组、attach Skill），返回建议运行命令 | `{version_id: str, name?: str, group_id?: str, skill_ids?: str[], params: dict[str,any], metric_schema?: [{key:str,type:"number"\|"string"\|"bool",unit?:str,higher_is_better?:bool}], status?: "pending"="pending"}` | `{experiment_id,name,version_id,group_id?,skill_ids?,status,params,suggested_command: str,results_file_convention: str,created_at}` |
 | `update_experiment_status` | 状态机迁移 running/done/failed；终态写 finished_at | `{experiment_id: str, status: "running"\|"done"\|"failed", finished_at?: str(ISO8601), error?: str}` | `{experiment_id,status,finished_at,warning?: "missing_metrics"}` |
 | `set_metrics` | 写 metrics + 可选声明 schema。**追加式**：已有键覆盖时保留 metric_history 快照 | `{experiment_id: str, metrics: dict[str,any], metric_schema?: [...]}` | `{experiment_id, metrics_count, added_keys: str[], overwritten_keys: str[], warning?: str}` |
 | `list_experiments` | 列表 + **键集合/基数自省** | `{direction_id?: str, idea_id?: str, version_id?: str, status?: str[], since?: str, limit?: int=50, offset?: int=0}` | `{experiments:[{...}], key_stats:{params_keys:[{key,cardinality}], metrics_keys:[{key,cardinality}]}}` |
@@ -465,13 +533,29 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 | `propose_experiment` | agent 提议，人批准（只建 proposal，不建实验） | `{version_id: str, title: str, rationale: str, proposed_params: dict[str,any], based_on_experiment_ids?: str[], confidence?: number, estimated_runtime?: str}` | `{proposal_id, status:"pending", created_at}` |
 | `list_proposals` | 列出提议（评审修订：补闭环断环，agent 需能查询自己提议的状态） | `{status?: "pending"\|"approved"\|"rejected", limit?: int=20, offset?: int=0}` | `{proposals:[{proposal_id,version_id,title,rationale,proposed_params,based_on_experiment_ids,confidence,status,created_at}], total}` |
 
+### H. Claim（结论 + 证据门）
+| 工具 | 用途 | 入参 schema | 返回 data |
+|---|---|---|---|
+| `create_claim` | 沉淀一条结论；supported 必须挂 evidence，无证据只能 speculation | `{statement: str, idea_id?: str, group_id?: str, confidence?: "speculation"\|"supported"\|"refuted"="speculation", evidence?: str[], rationale?: str}` | `{claim_id,confidence,evidence,missing_evidence,created_at}` |
+| `update_claim` | 升级/降级 confidence、补证据、改陈述 | `{claim_id: str, statement?: str, confidence?: str, evidence?: str[], rationale?: str}` | `{claim_id,confidence,evidence,updated_at}` |
+| `list_claims` | 列出结论（可按 idea/group/confidence 过滤） | `{idea_id?: str, group_id?: str, confidence?: str, include_archived?: bool=false}` | `{claims:[{...}], total}` |
+| `get_claim` | 单条结论全字段 | `{claim_id: str}` | `{claim:{...}}` |
+
+### I. Skill（可版本化协议本体）
+| 工具 | 用途 | 入参 schema | 返回 data |
+|---|---|---|---|
+| `create_skill` | 沉淀一个可复用技能（body 用 markdown；可选 paramsSchema / evidenceExpectations 契约） | `{name: str, description?: str, body?: str, direction_id?: str, tags?: str[], params_schema?: dict, evidence_expectations?: str[]}` | `{skill_id,version,name,status,created_at}` |
+| `update_skill` | 更新技能（version 自增，可版本化） | `{skill_id: str, name?: str, description?: str, body?: str, status?: "draft"\|"stable"\|"deprecated", tags?: str[], params_schema?: dict, evidence_expectations?: str[]}` | `{skill_id,version,status,updated_at}` |
+| `get_skill` | 单技能全字段（含 body） | `{skill_id: str}` | `{skill:{...}}` |
+| `list_skills` | 列出技能（可按方向/状态过滤） | `{direction_id?: str, status?: str, include_archived?: bool=false}` | `{skills:[{...}], total}` |
+
 ---
 
 ## 10. 权限边界（工具层面落地）
 
-- **只读（11 个）**：`list_directions` `search_papers` `list_ideas` `list_versions` `list_experiments` `get_experiment` `list_experiment_groups` `get_analyses` `global_search` `get_key_set` `list_proposals`
-- **只写新建 / append-only（10 个）**：`create_direction` `add_paper` `create_idea` `branch_idea` `create_version` `create_experiment` `create_experiment_group` `write_analysis` `propose_experiment` `set_metrics`（覆盖同键时保留 `metric_history` 快照）
-- **受限变更（8 个）**：`switch_direction`（上下文）`update_paper`（**白名单字段**）`update_idea_status` `update_experiment_status`（终态 done/failed 不可逆迁移，纠错需 `force:true` 仅 UI 可用）`update_experiment_group`（置 abandoned 即软删除）`mark_read` `link_paper_to_idea` `mark_deleted`（**受限软删除**：置 `deletedAt`，数据保留可 restore，物理清理只留 UI/REST）——**全部支持 `expected_updated_at` 乐观锁**
+- **只读（15 个）**：`list_directions` `search_papers` `list_ideas` `list_versions` `list_experiments` `get_experiment` `list_experiment_groups` `list_claims` `get_claim` `list_skills` `get_skill` `get_analyses` `global_search` `get_key_set` `list_proposals`
+- **只写新建 / append-only（13 个）**：`create_direction` `add_paper` `create_idea` `branch_idea` `create_version` `create_experiment` `create_experiment_group` `create_claim` `create_skill` `write_analysis` `propose_experiment` `set_metrics`（覆盖同键时保留 `metric_history` 快照）
+- **受限变更（10 个）**：`switch_direction`（上下文）`update_paper`（**白名单字段**）`update_idea_status` `update_experiment_status`（终态 done/failed 不可逆迁移，纠错需 `force:true` 仅 UI 可用）`update_experiment_group`（置 abandoned 即软删除）`update_claim` `update_skill` `mark_read` `link_paper_to_idea` `mark_deleted`（**受限软删除**：置 `deletedAt`，数据保留可 restore，物理清理只留 UI/REST）——**全部支持 `expected_updated_at` 乐观锁**
 - **MCP 面不存在**：任何硬删除、执行代码、修改已有实验结果。**软删除存在但受限**（`mark_deleted` 只置 `deletedAt`，可恢复）；物理清理仅走 REST/UI（人操作）。所有 agent 写入带 `source:"agent"`，供 UI SourceBadge 渲染。
 
 ---
@@ -486,14 +570,16 @@ lr 从 0.001 提到 0.01 时 **influence_spread** 持续上升…
 | Literature | `GET /papers?q=&tags=&direction_id=&derived=&sort=` · `POST /papers` · `PUT /papers/{id}` · `DELETE /papers/{id}`(软删) · `POST /papers/{id}/link-idea` · `DELETE /papers/{id}/link-idea/{idea_id}` | search_papers / add_paper / update_paper / link_paper_to_idea |
 | Idea | `GET /ideas?direction_id=&status=` · `POST /ideas` · `GET /ideas/{id}` · `PUT /ideas/{id}` · `POST /ideas/{id}/branch` · `DELETE /ideas/{id}`(→abandoned) | list_ideas / create_idea / update_idea_status / branch_idea |
 | Version | `GET /ideas/{idea_id}/versions` · `POST /versions` · `GET /versions/{id}` · `DELETE /versions/{id}`(软删) | list_versions / create_version |
-| ExperimentGroup | `GET /experiment-groups?idea_id=&include_archived=` · `POST /experiment-groups` · `PUT /experiment-groups/{id}`(置 abandoned 软删) | list_experiment_groups / create_experiment_group / update_experiment_group |
-| Experiment | `GET /experiments?direction_id=&idea_id=&version_id=&status=&q=`(全局表) · `GET /ideas/{i}/versions/{v}/experiments` · `POST /experiments`(`group_id` 可选) · `GET /experiments/{id}` · `PUT /experiments/{id}/status` · `PUT /experiments/{id}/metrics` · `DELETE /experiments/{id}`(软删) | list_experiments / create_experiment / update_experiment_status / set_metrics / get_experiment |
+| ExperimentGroup | `GET /experiment-groups?idea_id=&include_archived=` · `POST /experiment-groups`(`depends_on` 可选) · `PUT /experiment-groups/{id}`(置 abandoned 软删) | list_experiment_groups / create_experiment_group / update_experiment_group |
+| Experiment | `GET /experiments?direction_id=&idea_id=&version_id=&status=&q=`(全局表) · `GET /ideas/{i}/versions/{v}/experiments` · `POST /experiments`(`group_id`/`skill_ids` 可选) · `GET /experiments/{id}` · `PUT /experiments/{id}/status` · `PUT /experiments/{id}/metrics` · `DELETE /experiments/{id}`(软删) | list_experiments / create_experiment / update_experiment_status / set_metrics / get_experiment |
 | Analysis | `GET /experiments/{id}/analyses` · `POST /experiments/{id}/analyses`(source=human) · `PUT /analyses/{id}` · `PUT /analyses/{id}/read` · `DELETE /analyses/{id}`(软删) | get_analyses / write_analysis / mark_read |
+| Claim | `GET /claims?idea_id=&group_id=&confidence=` · `POST /claims` · `GET /claims/{id}` · `PUT /claims/{id}` · `DELETE /claims/{id}`(软删) | list_claims / create_claim / get_claim / update_claim |
+| Skill | `GET /skills?direction_id=&status=` · `POST /skills` · `GET /skills/{id}` · `PUT /skills/{id}` · `DELETE /skills/{id}`(软删) | list_skills / create_skill / get_skill / update_skill |
 | Proposal | `GET /proposals?status=pending` · `POST /proposals/{id}/approve`(人批准→创建 experiment) · `POST /proposals/{id}/reject`{reason} | propose_experiment |
 | 工具/事件 | `GET /search?q=` · `GET /key-set?scope=&scope_id=` · `GET /events/poll?since=<seq>` · `GET /events/stream`(SSE) | global_search / get_key_set / 事件推送 |
 | 静态 | `GET /` → FastAPI StaticFiles 托管原生单文件前端 | — |
 
-**推送方案**：v0.1 **以 15s 轮询为主**，`GET /events/poll?since=<seq>` 返回 `{events:[{seq,type,data,ts}], next_seq}` 增量拉取；真 SSE 用 `sse-starlette` 提供 `GET /events/stream`，二者并存、同游标，断线后用 `since` 补拉。事件类型：`experiment.finished` / `analysis.created` / `proposal.created`。
+**推送方案**：v0.1 **以 15s 轮询为主**，`GET /events/poll?since=<seq>` 返回 `{events:[{seq,type,data,ts}], next_seq}` 增量拉取；真 SSE 用 `sse-starlette` 提供 `GET /events/stream`，二者并存、同游标，断线后用 `since` 补拉。事件类型：`experiment.finished` / `analysis.created` / `proposal.created` / `claim.created` / `skill.created`。
 
 ---
 

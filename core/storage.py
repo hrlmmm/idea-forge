@@ -200,6 +200,21 @@ class DirectionLayout:
     def group_meta(self, group_id: str) -> Path:
         return self.group_dir(group_id) / "meta.json"
 
+    def claim_dir(self, claim_id: str) -> Path:
+        return self.research / "claims" / claim_id
+
+    def claim_meta(self, claim_id: str) -> Path:
+        return self.claim_dir(claim_id) / "meta.json"
+
+    def skill_dir(self, skill_id: str) -> Path:
+        return self.research / "skills" / skill_id
+
+    def skill_meta(self, skill_id: str) -> Path:
+        return self.skill_dir(skill_id) / "meta.json"
+
+    def skill_body(self, skill_id: str) -> Path:
+        return self.skill_dir(skill_id) / "skill.md"
+
     def init(self, direction_config: dict) -> None:
         """初始化 .research/（幂等）。"""
         atomic_write_json(self.config, direction_config)

@@ -65,6 +65,20 @@ def _find_group_root(group_id: str) -> DirectionLayout:
     raise KeyError(f"experiment group not found: {group_id}")
 
 
+def _find_claim_root(claim_id: str) -> DirectionLayout:
+    for _did, layout, _entry in _iter_directions():
+        if layout.claim_meta(claim_id).exists():
+            return layout
+    raise KeyError(f"claim not found: {claim_id}")
+
+
+def _find_skill_root(skill_id: str) -> DirectionLayout:
+    for _did, layout, _entry in _iter_directions():
+        if layout.skill_meta(skill_id).exists():
+            return layout
+    raise KeyError(f"skill not found: {skill_id}")
+
+
 def _alpha_name(seq: int) -> str:
     """1 -> a1, 2 -> a2 …（version 命名）"""
     return f"a{seq}"
@@ -302,14 +316,21 @@ def list_versions(idea_id: str | None = None, include_archived: bool = False) ->
 # ---------------------------------------------------------------- Experiment Group（实验线：Idea 下的验证分组）
 
 def create_experiment_group(idea_id: str, name: str, purpose: str | None = None,
-                            status: str = domain.GROUP_PLANNING) -> dict:
+                            status: str = domain.GROUP_PLANNING,
+                            depends_on: list[str] | None = None) -> dict:
     """在 Idea 下新建实验组（一条实验线，如 feasibility / main / ablation）。
 
-    name 由 agent 自由命名；purpose 声明这组要验证什么假设。
+    name 由 agent 自由命名；purpose 声明这组要验证什么假设；
+    depends_on 声明阶段依赖（如「阶段2 依赖阶段1 召回率 ≥ 0.8 通过」的闸门组）。
     """
     layout = _find_idea_root(idea_id)
     if status not in domain.GROUP_ALL_STATUS:
         raise ValueError(f"invalid group status: {status}")
+    # 校验依赖组存在且同属一个 idea
+    for dep_id in (depends_on or []):
+        dmeta = read_json(layout.group_meta(dep_id))
+        if not dmeta or dmeta.get("ideaId") != idea_id:
+            raise ValueError(f"invalid depends_on group: {dep_id}")
     cs = CounterStore(DataRoot().counters)
     seq = cs.bump("grp_seq")
     gid = f"grp-{seq:03d}"
@@ -321,6 +342,7 @@ def create_experiment_group(idea_id: str, name: str, purpose: str | None = None,
         "name": name,
         "purpose": purpose or "",
         "status": status,
+        "dependsOn": depends_on or [],
         "conclusion": "",
         "createdAt": now,
         "updatedAt": now,
@@ -338,8 +360,9 @@ def create_experiment_group(idea_id: str, name: str, purpose: str | None = None,
 
 def update_experiment_group(group_id: str, name: str | None = None,
                             purpose: str | None = None, status: str | None = None,
-                            conclusion: str | None = None) -> dict:
-    """更新实验组：名称 / 验证目的 / 状态 / 组级结论。"""
+                            conclusion: str | None = None,
+                            depends_on: list[str] | None = None) -> dict:
+    """更新实验组：名称 / 验证目的 / 状态 / 组级结论 / 阶段依赖。"""
     layout = _find_group_root(group_id)
     meta = read_json(layout.group_meta(group_id)) or {}
     if not meta:
@@ -358,6 +381,12 @@ def update_experiment_group(group_id: str, name: str | None = None,
         meta["purpose"] = purpose
     if conclusion is not None:
         meta["conclusion"] = conclusion
+    if depends_on is not None:
+        for dep_id in depends_on:
+            dmeta = read_json(layout.group_meta(dep_id))
+            if not dmeta or dmeta.get("ideaId") != meta.get("ideaId"):
+                raise ValueError(f"invalid depends_on group: {dep_id}")
+        meta["dependsOn"] = depends_on
     meta["updatedAt"] = domain.utc_now()
     atomic_write_json(layout.group_meta(group_id), meta)
     try:
@@ -405,7 +434,7 @@ def get_experiment_group(group_id: str) -> dict:
 def create_experiment(version_id: str, params: dict[str, Any] | None = None,
                       name: str | None = None, description: str | None = None,
                       created_by: str = "agent", git_ref: str | None = None,
-                      group_id: str | None = None) -> dict:
+                      group_id: str | None = None, skill_ids: list[str] | None = None) -> dict:
     layout = _find_version_root(version_id)
     # 实验 id 用全局计数器（跨方向唯一），避免 _find_exp_root 跨方向歧义
     cs = CounterStore(DataRoot().counters)
@@ -418,11 +447,15 @@ def create_experiment(version_id: str, params: dict[str, Any] | None = None,
         git_ref = vm.get("gitRef") or vm.get("fullGitRef")
     if group_id:
         _find_group_root(group_id)  # 校验实验组存在
+    # 校验 skill 存在
+    for sid in (skill_ids or []):
+        _find_skill_root(sid)
     meta = {
         "schemaVersion": SCHEMA_VERSION,
         "id": eid,
         "versionId": version_id,
         "groupId": group_id,
+        "skillIds": skill_ids or [],
         "name": name or f"run-{seq:03d}",
         "description": description or "",
         "status": domain.STATUS_PENDING,
@@ -710,12 +743,299 @@ def reject_proposal(proposal_id: str, reason: str | None = None) -> dict:
     raise KeyError(f"proposal not found or not pending: {proposal_id}")
 
 
-# ---------------------------------------------------------------- 受限软删除（agent 可标记，物理清理只留人/UI）
+# ---------------------------------------------------------------- Claim（结论 + 证据门 Evidence Gate）
+
+def create_claim(idea_id: str | None = None, group_id: str | None = None,
+                 statement: str = "", confidence: str = domain.CLAIM_SPECULATION,
+                 evidence: list[str] | None = None, rationale: str | None = None) -> dict:
+    """沉淀一条结论。证据门规则（claude-scholar Evidence Gate）：
+
+    - 没有 evidence 的 claim 只能处于 speculation（猜测），不能标 supported；
+    - 标 supported 必须至少挂 1 条 evidence（实验 id 或分析 id）；
+    - evidence 引用的实验/分析若不存在，写入时告警但不阻断（引用可后补）。
+    """
+    layout = None
+    if group_id:
+        layout = _find_group_root(group_id)
+    elif idea_id:
+        layout = _find_idea_root(idea_id)
+    if layout is None:
+        raise ValueError("claim 必须挂到 idea_id 或 group_id 之一")
+    if confidence not in domain.CLAIM_ALL_STATUS:
+        raise ValueError(f"invalid claim status: {confidence}")
+    ev = evidence or []
+    if confidence == domain.CLAIM_SUPPORTED and not ev:
+        raise ValueError("supported 结论必须有 evidence，否则请标 speculation")
+    # 校验 evidence 存在性（软告警，不阻断）
+    missing = []
+    for ref in ev:
+        try:
+            _find_exp_root(ref)
+        except KeyError:
+            missing.append(ref)
+    cs = CounterStore(DataRoot().counters)
+    seq = cs.bump("claim_seq")
+    cid = f"clm-{seq:03d}"
+    now = domain.utc_now()
+    meta = {
+        "schemaVersion": SCHEMA_VERSION,
+        "id": cid,
+        "ideaId": idea_id,
+        "groupId": group_id,
+        "statement": statement,
+        "confidence": confidence,
+        "evidence": ev,
+        "rationale": rationale or "",
+        "missingEvidence": missing,
+        "createdAt": now,
+        "updatedAt": now,
+        "deletedAt": None,
+    }
+    atomic_write_json(layout.claim_meta(cid), meta)
+    try:
+        from .index import append_event
+        append_event(None, "claim.created",
+                     {"claim_id": cid, "confidence": confidence, "statement": statement[:80]})
+    except Exception:
+        pass
+    return meta
+
+
+def update_claim(claim_id: str, statement: str | None = None,
+                 confidence: str | None = None, evidence: list[str] | None = None,
+                 rationale: str | None = None) -> dict:
+    """更新结论：升级/降级 confidence、补证据、改陈述。"""
+    layout = _find_claim_root(claim_id)
+    meta = read_json(layout.claim_meta(claim_id)) or {}
+    if not meta:
+        raise KeyError(f"claim not found: {claim_id}")
+    if confidence is not None:
+        if confidence not in domain.CLAIM_ALL_STATUS:
+            raise ValueError(f"invalid claim status: {confidence}")
+        meta["confidence"] = confidence
+    if evidence is not None:
+        meta["evidence"] = evidence
+        # 重新校验存在性
+        missing = []
+        for ref in evidence:
+            try:
+                _find_exp_root(ref)
+            except KeyError:
+                missing.append(ref)
+        meta["missingEvidence"] = missing
+    if statement is not None:
+        meta["statement"] = statement
+    if rationale is not None:
+        meta["rationale"] = rationale
+    # 证据门：supported 必须有证据
+    if meta["confidence"] == domain.CLAIM_SUPPORTED and not meta.get("evidence"):
+        raise ValueError("supported 结论必须有 evidence，否则请降级为 speculation")
+    meta["updatedAt"] = domain.utc_now()
+    atomic_write_json(layout.claim_meta(claim_id), meta)
+    try:
+        from .index import append_event
+        append_event(None, "claim.updated",
+                     {"claim_id": claim_id, "confidence": meta["confidence"]})
+    except Exception:
+        pass
+    return meta
+
+
+def list_claims(idea_id: str | None = None, group_id: str | None = None,
+                confidence: str | None = None, include_archived: bool = False) -> list[dict]:
+    out = []
+    for _did, layout, _entry in _iter_directions():
+        cdir = layout.research / "claims"
+        if not cdir.exists():
+            continue
+        for meta_path in sorted(cdir.glob("*/meta.json")):
+            meta = read_json(meta_path)
+            if not meta or (not include_archived and meta.get("deletedAt")):
+                continue
+            if idea_id and meta.get("ideaId") != idea_id:
+                continue
+            if group_id and meta.get("groupId") != group_id:
+                continue
+            if confidence and meta.get("confidence") != confidence:
+                continue
+            out.append(meta)
+    return out
+
+
+def get_claim(claim_id: str) -> dict:
+    layout = _find_claim_root(claim_id)
+    meta = read_json(layout.claim_meta(claim_id))
+    if not meta:
+        raise KeyError(f"claim not found: {claim_id}")
+    return meta
+
+
+# ---------------------------------------------------------------- Skill（可版本化、可传授的协议本体）
+
+def create_skill(name: str, description: str = "", body: str = "",
+                 direction_id: str | None = None, tags: list[str] | None = None,
+                 params_schema: dict[str, Any] | None = None,
+                 evidence_expectations: list[str] | None = None) -> dict:
+    """沉淀一个可复用技能（协议本体）：agent 把「怎么调参、怎么判据」固化成 Skill。
+
+    body 用 markdown 描述步骤；params_schema 是可选的输入契约；
+    evidence_expectations 声明「照这个 skill 跑完，应产出哪些证据/指标」。
+    """
+    cs = CounterStore(DataRoot().counters)
+    seq = cs.bump("skill_seq")
+    sid = f"skl-{seq:03d}"
+    now = domain.utc_now()
+    meta = {
+        "schemaVersion": SCHEMA_VERSION,
+        "id": sid,
+        "version": 1,
+        "name": name,
+        "description": description or "",
+        "status": domain.SKILL_DRAFT,
+        "directionId": direction_id,
+        "tags": tags or [],
+        "paramsSchema": params_schema or {},
+        "evidenceExpectations": evidence_expectations or [],
+        "createdAt": now,
+        "updatedAt": now,
+        "deletedAt": None,
+    }
+    # 确定落盘方向：优先给定 direction，否则全局 data_root
+    if direction_id:
+        layout = DirectionLayout(get_direction(direction_id)["root_path"])
+    else:
+        # 全局 skill 放 data_root/skills
+        dr = DataRoot()
+        global_skill_dir = dr.root / "skills"
+        global_skill_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(global_skill_dir / sid / "meta.json", meta)
+        atomic_write_text(global_skill_dir / sid / "skill.md", body.strip() + "\n")
+        try:
+            from .index import append_event
+            append_event(None, "skill.created", {"skill_id": sid, "name": name})
+        except Exception:
+            pass
+        return meta
+    atomic_write_json(layout.skill_meta(sid), meta)
+    atomic_write_text(layout.skill_body(sid), body.strip() + "\n")
+    try:
+        from .index import append_event
+        append_event(None, "skill.created", {"skill_id": sid, "name": name})
+    except Exception:
+        pass
+    return meta
+
+
+def _skill_layout(skill_id: str) -> tuple[DirectionLayout | None, Path | None]:
+    """定位 skill：先在方向 .research/skills 找，再在全局 data_root/skills 找。"""
+    for _did, layout, _entry in _iter_directions():
+        if layout.skill_meta(skill_id).exists():
+            return layout, layout.skill_meta(skill_id)
+    dr = DataRoot()
+    gpath = dr.root / "skills" / skill_id / "meta.json"
+    if gpath.exists():
+        return None, gpath
+    raise KeyError(f"skill not found: {skill_id}")
+
+
+def get_skill(skill_id: str) -> dict:
+    layout, meta_path = _skill_layout(skill_id)
+    meta = read_json(meta_path)
+    if not meta:
+        raise KeyError(f"skill not found: {skill_id}")
+    # body
+    if layout is not None:
+        bp = layout.skill_body(skill_id)
+        body = bp.read_text(encoding="utf-8") if bp.exists() else ""
+    else:
+        dr = DataRoot()
+        bp = dr.root / "skills" / skill_id / "skill.md"
+        body = bp.read_text(encoding="utf-8") if bp.exists() else ""
+    return {**meta, "body": body}
+
+
+def update_skill(skill_id: str, name: str | None = None, description: str | None = None,
+                 body: str | None = None, status: str | None = None,
+                 tags: list[str] | None = None, params_schema: dict[str, Any] | None = None,
+                 evidence_expectations: list[str] | None = None) -> dict:
+    """更新技能：改描述/正文/状态；每次更新 version 自增（可版本化）。"""
+    layout, meta_path = _skill_layout(skill_id)
+    meta = read_json(meta_path) or {}
+    if not meta:
+        raise KeyError(f"skill not found: {skill_id}")
+    if status is not None:
+        if status not in domain.SKILL_ALL_STATUS:
+            raise ValueError(f"invalid skill status: {status}")
+        meta["status"] = status
+    if name is not None:
+        meta["name"] = name
+    if description is not None:
+        meta["description"] = description
+    if tags is not None:
+        meta["tags"] = tags
+    if params_schema is not None:
+        meta["paramsSchema"] = params_schema
+    if evidence_expectations is not None:
+        meta["evidenceExpectations"] = evidence_expectations
+    meta["version"] = int(meta.get("version", 1)) + 1
+    meta["updatedAt"] = domain.utc_now()
+    atomic_write_json(meta_path, meta)
+    if body is not None:
+        if layout is not None:
+            atomic_write_text(layout.skill_body(skill_id), body.strip() + "\n")
+        else:
+            dr = DataRoot()
+            atomic_write_text(dr.root / "skills" / skill_id / "skill.md", body.strip() + "\n")
+    try:
+        from .index import append_event
+        append_event(None, "skill.updated",
+                     {"skill_id": skill_id, "version": meta["version"]})
+    except Exception:
+        pass
+    return meta
+
+
+def list_skills(direction_id: str | None = None, status: str | None = None,
+                include_archived: bool = False) -> list[dict]:
+    out = []
+    seen = set()
+    for _did, layout, _entry in _iter_directions():
+        if direction_id and _did != direction_id:
+            continue
+        sdir = layout.research / "skills"
+        if not sdir.exists():
+            continue
+        for meta_path in sorted(sdir.glob("*/meta.json")):
+            meta = read_json(meta_path)
+            if not meta or (not include_archived and meta.get("deletedAt")):
+                continue
+            if status and meta.get("status") != status:
+                continue
+            if meta["id"] not in seen:
+                seen.add(meta["id"])
+                out.append(meta)
+    # 全局 skills
+    dr = DataRoot()
+    gdir = dr.root / "skills"
+    if gdir.exists():
+        for meta_path in sorted(gdir.glob("*/meta.json")):
+            meta = read_json(meta_path)
+            if not meta or (not include_archived and meta.get("deletedAt")):
+                continue
+            if status and meta.get("status") != status:
+                continue
+            if meta["id"] not in seen:
+                seen.add(meta["id"])
+                out.append(meta)
+    return out
+
+
+
 
 def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dict:
     """受限软删除 / 恢复：置 `deletedAt`（数据保留、查询默认过滤、可恢复）。
 
-    entity_type ∈ {direction, paper, idea, version, experiment, group}。
+    entity_type ∈ {direction, paper, idea, version, experiment, group, claim, skill}。
     物理清理不在 agent 权限内（只留给 UI/REST 的显式 prune）。
     """
     now = domain.utc_now()
@@ -736,6 +1056,11 @@ def mark_deleted(entity_type: str, entity_id: str, restore: bool = False) -> dic
     elif entity_type == "group":
         layout = _find_group_root(entity_id)
         path = layout.group_meta(entity_id)
+    elif entity_type == "claim":
+        layout = _find_claim_root(entity_id)
+        path = layout.claim_meta(entity_id)
+    elif entity_type == "skill":
+        layout, path = _skill_layout(entity_id)
     elif entity_type == "direction":
         dr = DataRoot()
         reg = read_json(dr.directions_file, {}) or {}

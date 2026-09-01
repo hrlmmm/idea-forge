@@ -644,6 +644,36 @@ Literature ──「+ 衍生 Idea」──▶ Idea（分支树）
 
 **数据契约**：实验组由 agent 经 MCP（`create_experiment_group` / `update_experiment_group` / `list_experiment_groups`）创建与维护；前端只读展示。实验通过 `groupId` 归组（`create_experiment` 可选传 `group_id`）。
 
+- **阶段依赖（闸门）展示**：组若有 `dependsOn`，组头加一条 `← 依赖 grp-000` 小字链（`--neutral-500`），说明「这个阶段要等上一阶段验证通过才启动」。
+
+### 7.5 结论（Claim）与证据门（2026-09-01 新增）
+
+**动机**：agent 跑完实验后，会得出"两阶段成立 / 某规则召回率最高"这类判断。这些结论必须**有家**，且要能看出它有没有证据支撑，否则和 agent 随口一说没区别。
+
+**位置**：Idea 详情页新增「结论」区；实验组卡片下方也可内联展示该组的结论。
+
+**结论卡（ClaimCard）**：
+- 置信度徽章：`speculation 猜测`（`--neutral-400`，虚线框）/ `supported 已证实`（`--success-600` 底）/ `refuted 已否定`（`--danger-600` 底）。
+- 陈述行：`statement`（主文字）。
+- 证据行：`证据：exp-048、exp-049`（引用实验 id，可点击跳转）；若 `missingEvidence` 非空，追加 `⚠ 以下证据缺失：exp-999`（`--warning-500`）。
+- 理由行：`rationale`（小字）。
+
+**数据契约**：由 agent 经 MCP `create_claim` / `update_claim` 维护；`supported` 必须挂 evidence（证据门在服务端强校验）。
+
+### 7.6 技能（Skill）库（2026-09-01 新增）
+
+**动机**：agent 沉淀下来的可复用技能（"怎么调参、怎么判据"）是平台的**核心资产**——这就是"agent 给 agent 技能"的落地点。人也要能看到技能库长什么样。
+
+**位置**：侧边栏新增「技能」入口 `#/skills`。
+
+**技能卡（SkillCard）**：
+- 名称 + 状态徽章（`draft 草稿` / `stable 稳定` / `deprecated 已弃用`）+ 版本号 `v2`（mono）+ tags。
+- 描述行：`description`。
+- 证据预期：`应产出：recall >= 0.8`（`evidenceExpectations` 列表，`--neutral-500`）。
+- 正文可展开（skill.md）。
+
+**数据契约**：由 agent 经 MCP `create_skill` / `update_skill` 维护；前端只读展示。
+
 ---
 
 ## 8. 组件清单（前端可直接照此拆分）

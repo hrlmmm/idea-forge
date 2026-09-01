@@ -64,6 +64,7 @@ class ExperimentGroupIn(BaseModel):
     name: str
     purpose: str | None = None
     status: str | None = None
+    depends_on: list[str] | None = None
 
 
 class ExperimentGroupUpdate(BaseModel):
@@ -71,6 +72,43 @@ class ExperimentGroupUpdate(BaseModel):
     purpose: str | None = None
     status: str | None = None
     conclusion: str | None = None
+    depends_on: list[str] | None = None
+
+
+class ClaimIn(BaseModel):
+    statement: str
+    idea_id: str | None = None
+    group_id: str | None = None
+    confidence: str = "speculation"
+    evidence: list[str] | None = None
+    rationale: str | None = None
+
+
+class ClaimUpdate(BaseModel):
+    statement: str | None = None
+    confidence: str | None = None
+    evidence: list[str] | None = None
+    rationale: str | None = None
+
+
+class SkillIn(BaseModel):
+    name: str
+    description: str = ""
+    body: str = ""
+    direction_id: str | None = None
+    tags: list[str] | None = None
+    params_schema: dict[str, Any] | None = None
+    evidence_expectations: list[str] | None = None
+
+
+class SkillUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    body: str | None = None
+    status: str | None = None
+    tags: list[str] | None = None
+    params_schema: dict[str, Any] | None = None
+    evidence_expectations: list[str] | None = None
 
 
 class StatusIn(BaseModel):
@@ -223,7 +261,7 @@ def api_create_experiment_group(body: ExperimentGroupIn):
     try:
         return service.create_experiment_group(
             body.idea_id, body.name, body.purpose,
-            body.status or "planning")
+            body.status or "planning", body.depends_on)
     except Exception as e:
         raise _err(e)
 
@@ -232,7 +270,8 @@ def api_create_experiment_group(body: ExperimentGroupIn):
 def api_update_experiment_group(group_id: str, body: ExperimentGroupUpdate):
     try:
         return service.update_experiment_group(
-            group_id, body.name, body.purpose, body.status, body.conclusion)
+            group_id, body.name, body.purpose, body.status, body.conclusion,
+            body.depends_on)
     except Exception as e:
         raise _err(e)
 
@@ -283,6 +322,77 @@ def api_write_analysis(exp_id: str, body: AnalysisIn):
         raise _err(e)
 
 
+# ---------------------------------------------------------------- Claim（结论 + 证据门）
+
+@app.get("/api/v1/claims")
+def api_list_claims(idea_id: str | None = None, group_id: str | None = None,
+                    confidence: str | None = None, include_archived: bool = False):
+    return {"claims": service.list_claims(idea_id, group_id, confidence,
+                                          include_archived)}
+
+
+@app.post("/api/v1/claims")
+def api_create_claim(body: ClaimIn):
+    try:
+        return service.create_claim(body.idea_id, body.group_id, body.statement,
+                                    body.confidence, body.evidence, body.rationale)
+    except Exception as e:
+        raise _err(e)
+
+
+@app.get("/api/v1/claims/{claim_id}")
+def api_get_claim(claim_id: str):
+    try:
+        return service.get_claim(claim_id)
+    except Exception as e:
+        raise _err(e)
+
+
+@app.put("/api/v1/claims/{claim_id}")
+def api_update_claim(claim_id: str, body: ClaimUpdate):
+    try:
+        return service.update_claim(claim_id, body.statement, body.confidence,
+                                    body.evidence, body.rationale)
+    except Exception as e:
+        raise _err(e)
+
+
+# ---------------------------------------------------------------- Skill（可版本化协议本体）
+
+@app.get("/api/v1/skills")
+def api_list_skills(direction_id: str | None = None, status: str | None = None,
+                    include_archived: bool = False):
+    return {"skills": service.list_skills(direction_id, status, include_archived)}
+
+
+@app.post("/api/v1/skills")
+def api_create_skill(body: SkillIn):
+    try:
+        return service.create_skill(body.name, body.description, body.body,
+                                    body.direction_id, body.tags,
+                                    body.params_schema, body.evidence_expectations)
+    except Exception as e:
+        raise _err(e)
+
+
+@app.get("/api/v1/skills/{skill_id}")
+def api_get_skill(skill_id: str):
+    try:
+        return service.get_skill(skill_id)
+    except Exception as e:
+        raise _err(e)
+
+
+@app.put("/api/v1/skills/{skill_id}")
+def api_update_skill(skill_id: str, body: SkillUpdate):
+    try:
+        return service.update_skill(skill_id, body.name, body.description, body.body,
+                                    body.status, body.tags, body.params_schema,
+                                    body.evidence_expectations)
+    except Exception as e:
+        raise _err(e)
+
+
 # ---------------------------------------------------------------- Proposal / 查询 / 事件
 
 @app.get("/api/v1/proposals")
@@ -293,7 +403,7 @@ def api_list_proposals(status: str | None = None):
 # 软删除（受限）：只有人能删（UI/REST），agent 只能经 MCP mark_deleted
 _ENTITY_SINGULAR = {"directions": "direction", "papers": "paper", "ideas": "idea",
                     "versions": "version", "experiments": "experiment",
-                    "experiment-groups": "group"}
+                    "experiment-groups": "group", "claims": "claim", "skills": "skill"}
 
 
 @app.delete("/api/v1/{collection}/{entity_id}")

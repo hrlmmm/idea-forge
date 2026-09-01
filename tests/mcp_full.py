@@ -51,7 +51,7 @@ async def main() -> int:
             await session.initialize()
             tools = await session.list_tools()
             names = sorted(t.name for t in tools.tools)
-            check("31 个工具", len(names) == 31, f"实际 {len(names)}")
+            check("39 个工具", len(names) == 39, f"实际 {len(names)}")
 
             async def call(name, args):
                 res = await session.call_tool(name, args)
@@ -174,8 +174,33 @@ async def main() -> int:
             t = await call("reject_proposal", {"proposal_id": pid3, "reason": "lr 过高"})
             check("reject_proposal", '"rejected"' in t)
 
-    passed = 31 - len(FAILED)
-    print(f"\n=== 通过 {passed}/31，失败 {len(FAILED)}: {FAILED} ===")
+            # ---- H. Claim（结论 + 证据门）
+            t = await call("create_claim", {"idea_id": idea["id"], "statement": "两阶段成立",
+                                            "confidence": "supported", "evidence": [exp["id"]]})
+            check("create_claim supported", '"claim_id"' in t and '"supported"' in t)
+            import json as _json2
+            cid = _json2.loads(t)["data"]["claim_id"]
+            t = await call("list_claims", {"idea_id": idea["id"]})
+            check("list_claims", cid in t)
+            t = await call("get_claim", {"claim_id": cid})
+            check("get_claim", '"statement"' in t)
+            t = await call("update_claim", {"claim_id": cid, "confidence": "refuted"})
+            check("update_claim", '"refuted"' in t)
+
+            # ---- I. Skill（可版本化协议本体）
+            t = await call("create_skill", {"name": "召回率验证", "body": "# 步骤",
+                                            "direction_id": d["direction_id"]})
+            check("create_skill", '"skill_id"' in t and '"version": 1' in t)
+            sid = _json2.loads(t)["data"]["skill_id"]
+            t = await call("update_skill", {"skill_id": sid, "status": "stable"})
+            check("update_skill version自增", '"version": 2' in t)
+            t = await call("get_skill", {"skill_id": sid})
+            check("get_skill", '"body"' in t)
+            t = await call("list_skills", {"status": "stable"})
+            check("list_skills", sid in t)
+
+    passed = 39 - len(FAILED)
+    print(f"\n=== 通过 {passed}/39，失败 {len(FAILED)}: {FAILED} ===")
     return 1 if FAILED else 0
 
 
