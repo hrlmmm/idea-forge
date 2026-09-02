@@ -54,6 +54,8 @@ export IDEAFORGE_HOME=D:/ideaforge-home      # Windows 示例，D 盘
 
 其他：`ideaforge direction/paper/idea/version/exp/analysis ...` 命令行 CRUD；`ideaforge index rebuild` 重建 SQLite 索引。
 
+**Agent 必读**：使用前先读 [docs/agent-protocol.md](docs/agent-protocol.md)（开发期使用协议与反馈规范）；研究操作流程见 [docs/agent-workflow.md](docs/agent-workflow.md)。
+
 ## 给 agent 配置 MCP
 
 在任意 MCP 兼容客户端（Claude Desktop / Cursor / WorkBuddy 等）里加一段配置：
